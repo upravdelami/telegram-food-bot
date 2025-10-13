@@ -6,8 +6,10 @@ import time
 from datetime import datetime, timedelta, timezone
 from flask import Flask, request, abort
 import threading
-import csv
 import io
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 TOKEN = os.environ.get('BOT_TOKEN')
 BOT_URL = '/webhook'
@@ -90,7 +92,7 @@ def admin_panel(message: Message):
     
     markup = InlineKeyboardMarkup(row_width=2)
     buttons = [
-        InlineKeyboardButton('📊 CSV Сводка', callback_data='admin_csv'),
+        InlineKeyboardButton('📊 Excel Сводка', callback_data='admin_excel'),
         InlineKeyboardButton('📋 Текстовая сводка', callback_data='admin_summary'),
         InlineKeyboardButton('👥 Список клиентов', callback_data='admin_clients'),
         InlineKeyboardButton('🔄 Обнулить заказы', callback_data='admin_clear'),
@@ -178,8 +180,8 @@ def handle_callback(call):
         show_edit_menu(call, user_data)
     elif call.data == 'my_data':
         show_user_data(call, user_data)
-    elif call.data == 'admin_csv':
-        send_csv_summary(call)
+    elif call.data == 'admin_excel':
+        send_excel_summary(call)
     elif call.data == 'admin_summary':
         send_text_summary(call)
     elif call.data == 'admin_clients':
@@ -288,8 +290,8 @@ def handle_quantity(message: Message):
     except ValueError:
         bot.reply_to(message, "Введите целое число (0 для удаления позиции):")
 
-def generate_csv_data():
-    """Генерация CSV данных"""
+def generate_excel_file():
+    """Генерация Excel файла со сводкой"""
     active_users = {uid: data for uid, data in users_data.items() if data.get('orders')}
     
     if not active_users:
@@ -308,21 +310,43 @@ def generate_csv_data():
     # Сортируем по названию точки
     clients_data.sort(key=lambda x: x['name'])
     
-    # Создаем CSV в памяти
-    output = io.StringIO()
-    writer = csv.writer(output)
+    # Создаем Excel книгу
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Сводка заказов"
     
-    # Заголовок с датой
-    writer.writerow([f"Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}"])
-    writer.writerow([])
+    # Стили
+    header_font = Font(bold=True, size=14)
+    title_font = Font(bold=True, size=12)
+    bold_font = Font(bold=True)
+    center_align = Alignment(horizontal='center', vertical='center')
+    border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                   top=Side(style='thin'), bottom=Side(style='thin'))
+    
+    # Заголовок
+    ws.merge_cells('A1:H1')
+    ws['A1'] = f"Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}"
+    ws['A1'].font = header_font
+    ws['A1'].alignment = center_align
+    
+    # Пустая строка
+    ws.append([])
     
     # Заголовки таблицы
-    headers = ['Точка', 'Адрес'] + list(positions.keys()) + ['ИТОГО']
-    writer.writerow(headers)
+    headers = ['№', 'Точка', 'Адрес'] + list(positions.keys()) + ['ИТОГО']
+    ws.append(headers)
+    
+    # Применяем стили к заголовкам
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=3, column=col)
+        cell.font = title_font
+        cell.alignment = center_align
+        cell.border = border
     
     # Данные по клиентам
-    for client in clients_data:
-        row = [client['name'], client['address']]
+    row_num = 4
+    for i, client in enumerate(clients_data, 1):
+        row = [i, client['name'], client['address']]
         total = 0
         
         for pos in positions.keys():
@@ -331,21 +355,64 @@ def generate_csv_data():
             total += qty
         
         row.append(total)
-        writer.writerow(row)
+        ws.append(row)
+        
+        # Применяем стили к строке
+        for col in range(1, len(headers) + 1):
+            cell = ws.cell(row=row_num, column=col)
+            cell.border = border
+            if col in [1, len(headers)]:  # № и ИТОГО - жирный
+                cell.font = bold_font
     
     # Итоговая строка
-    writer.writerow([])
-    total_row = ['ВСЕГО', ''] + [sum(client['orders'].get(pos, 0) for client in clients_data) for pos in positions.keys()]
-    total_row.append(sum(total_row[2:]))
-    writer.writerow(total_row)
+    ws.append([])
+    total_row = ['ВСЕГО', '', '']
     
-    return output.getvalue()
+    for pos in positions.keys():
+        pos_total = sum(client['orders'].get(pos, 0) for client in clients_data)
+        total_row.append(pos_total)
+    
+    total_row.append(sum(total_row[3:]))
+    ws.append(total_row)
+    
+    # Стили для итоговой строки
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=row_num + 2, column=col)
+        cell.font = bold_font
+        cell.border = border
+        if col >= 4:  # Числовые колонки
+            cell.alignment = center_align
+    
+    # Настраиваем ширину колонок
+    column_widths = {
+        'A': 5,    # №
+        'B': 25,   # Точка
+        'C': 30,   # Адрес
+    }
+    
+    # Ширина для позиций
+    for i, pos in enumerate(positions.keys(), 4):
+        col_letter = get_column_letter(i)
+        column_widths[col_letter] = 8
+    
+    # Ширина для ИТОГО
+    column_widths[get_column_letter(len(headers))] = 10
+    
+    for col, width in column_widths.items():
+        ws.column_dimensions[col].width = width
+    
+    # Сохраняем в память
+    excel_buffer = io.BytesIO()
+    wb.save(excel_buffer)
+    excel_buffer.seek(0)
+    
+    return excel_buffer
 
-def send_csv_summary(call=None):
-    """Отправка CSV сводки"""
-    csv_data = generate_csv_data()
+def send_excel_summary(call=None):
+    """Отправка Excel сводки"""
+    excel_buffer = generate_excel_file()
     
-    if not csv_data:
+    if not excel_buffer:
         if call:
             bot.answer_callback_query(call.id, "Нет заказов")
             bot.send_message(call.message.chat.id, "📭 Нет заказов за сегодня.")
@@ -353,21 +420,22 @@ def send_csv_summary(call=None):
             bot.send_message(ADMIN_CHAT_ID, "📭 Нет заказов за сегодня.")
         return
     
-    # Создаем временный файл
-    filename = f"orders_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    # Отправляем Excel файл
+    filename = f"заказы_{datetime.now().strftime('%d.%m.%Y')}.xlsx"
     
-    # Отправляем CSV файл
     if call:
         bot.answer_callback_query(call.id)
         bot.send_document(
             call.message.chat.id,
-            document=(filename, io.BytesIO(csv_data.encode('utf-8-sig'))),
-            caption=f"📊 Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}"
+            document=excel_buffer,
+            visible_file_name=filename,
+            caption=f"📊 Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}\n\nФайл готов для открытия в Excel"
         )
     else:
         bot.send_document(
             ADMIN_CHAT_ID,
-            document=(filename, io.BytesIO(csv_data.encode('utf-8-sig'))),
+            document=excel_buffer,
+            visible_file_name=filename,
             caption=f"📊 Автоматическая сводка заказов от {datetime.now().strftime('%d.%m.%Y')}"
         )
         
@@ -449,7 +517,7 @@ def scheduler():
     while True:
         now = datetime.now(msk_tz)
         if now.hour == 20 and now.minute == 0:
-            send_csv_summary()
+            send_excel_summary()
         time.sleep(60)
 
 def setup_webhook():
