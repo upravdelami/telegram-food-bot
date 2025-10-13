@@ -6,6 +6,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from flask import Flask, request, abort
 import threading
+import csv
+import io
 
 TOKEN = os.environ.get('BOT_TOKEN')
 BOT_URL = '/webhook'
@@ -88,11 +90,13 @@ def admin_panel(message: Message):
     
     markup = InlineKeyboardMarkup(row_width=2)
     buttons = [
-        InlineKeyboardButton('📊 Сводка заказов', callback_data='admin_summary'),
+        InlineKeyboardButton('📊 CSV Сводка', callback_data='admin_csv'),
+        InlineKeyboardButton('📋 Текстовая сводка', callback_data='admin_summary'),
         InlineKeyboardButton('👥 Список клиентов', callback_data='admin_clients'),
         InlineKeyboardButton('🔄 Обнулить заказы', callback_data='admin_clear'),
     ]
-    markup.add(*buttons)
+    markup.add(*buttons[:2])
+    markup.add(*buttons[2:])
     
     bot.send_message(message.chat.id, "⚙️ **Панель администратора**", reply_markup=markup)
 
@@ -174,8 +178,10 @@ def handle_callback(call):
         show_edit_menu(call, user_data)
     elif call.data == 'my_data':
         show_user_data(call, user_data)
+    elif call.data == 'admin_csv':
+        send_csv_summary(call)
     elif call.data == 'admin_summary':
-        send_summary(call)
+        send_text_summary(call)
     elif call.data == 'admin_clients':
         show_clients_list(call)
     elif call.data == 'admin_clear':
@@ -282,22 +288,15 @@ def handle_quantity(message: Message):
     except ValueError:
         bot.reply_to(message, "Введите целое число (0 для удаления позиции):")
 
-def send_summary(call=None):
-    """Отправка сводки заказов"""
+def generate_csv_data():
+    """Генерация CSV данных"""
     active_users = {uid: data for uid, data in users_data.items() if data.get('orders')}
     
     if not active_users:
-        if call:
-            bot.answer_callback_query(call.id, "Нет заказов")
-            bot.send_message(call.message.chat.id, "📭 Нет заказов за сегодня.")
-        else:
-            bot.send_message(ADMIN_CHAT_ID, "📭 Нет заказов за сегодня.")
-        return
-    
-    all_positions = sorted(positions.keys())
-    clients_data = []
+        return None
     
     # Собираем данные клиентов
+    clients_data = []
     for user_id, user_data in active_users.items():
         if user_data.get('orders'):
             clients_data.append({
@@ -309,63 +308,111 @@ def send_summary(call=None):
     # Сортируем по названию точки
     clients_data.sort(key=lambda x: x['name'])
     
-    # Формируем улучшенную таблицу
-    summary_text = "📊 **СВОДКА ЗАКАЗОВ**\n"
-    summary_text += f"📅 {datetime.now().strftime('%d.%m.%Y')}\n"
-    summary_text += f"👥 Клиентов: {len(clients_data)}\n\n"
+    # Создаем CSV в памяти
+    output = io.StringIO()
+    writer = csv.writer(output)
     
-    # Заголовок таблицы
-    header = "┌" + "─" * 20 + "┬" + "─" * 6 + "┐\n"
-    header += "│ Позиция           │ Всего │\n"
-    header += "├" + "─" * 20 + "┼" + "─" * 6 + "┤\n"
+    # Заголовок с датой
+    writer.writerow([f"Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}"])
+    writer.writerow([])
     
-    # Тело таблицы с итогами по позициям
-    table_body = ""
-    total_all = 0
+    # Заголовки таблицы
+    headers = ['Точка', 'Адрес'] + list(positions.keys()) + ['ИТОГО']
+    writer.writerow(headers)
     
-    for pos in all_positions:
-        pos_total = 0
-        for client in clients_data:
-            pos_total += client['orders'].get(pos, 0)
+    # Данные по клиентам
+    for client in clients_data:
+        row = [client['name'], client['address']]
+        total = 0
         
-        if pos_total > 0:  # Показываем только позиции с заказами
-            table_body += f"│ {pos:<18} │ {pos_total:>5} │\n"
-            total_all += pos_total
+        for pos in positions.keys():
+            qty = client['orders'].get(pos, 0)
+            row.append(qty)
+            total += qty
+        
+        row.append(total)
+        writer.writerow(row)
     
     # Итоговая строка
-    footer = "├" + "─" * 20 + "┼" + "─" * 6 + "┤\n"
-    footer += f"│ ИТОГО             │ {total_all:>5} │\n"
-    footer += "└" + "─" * 20 + "┴" + "─" * 6 + "┘\n"
+    writer.writerow([])
+    total_row = ['ВСЕГО', ''] + [sum(client['orders'].get(pos, 0) for client in clients_data) for pos in positions.keys()]
+    total_row.append(sum(total_row[2:]))
+    writer.writerow(total_row)
     
-    summary_text += "```\n" + header + table_body + footer + "```\n\n"
+    return output.getvalue()
+
+def send_csv_summary(call=None):
+    """Отправка CSV сводки"""
+    csv_data = generate_csv_data()
     
-    # Детали по клиентам
-    summary_text += "**ДЕТАЛИ ПО КЛИЕНТАМ:**\n"
+    if not csv_data:
+        if call:
+            bot.answer_callback_query(call.id, "Нет заказов")
+            bot.send_message(call.message.chat.id, "📭 Нет заказов за сегодня.")
+        else:
+            bot.send_message(ADMIN_CHAT_ID, "📭 Нет заказов за сегодня.")
+        return
+    
+    # Создаем временный файл
+    filename = f"orders_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    
+    # Отправляем CSV файл
+    if call:
+        bot.answer_callback_query(call.id)
+        bot.send_document(
+            call.message.chat.id,
+            document=(filename, io.BytesIO(csv_data.encode('utf-8-sig'))),
+            caption=f"📊 Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}"
+        )
+    else:
+        bot.send_document(
+            ADMIN_CHAT_ID,
+            document=(filename, io.BytesIO(csv_data.encode('utf-8-sig'))),
+            caption=f"📊 Автоматическая сводка заказов от {datetime.now().strftime('%d.%m.%Y')}"
+        )
+        
+        # Автоматически очищаем заказы после отправки сводки
+        for user_data in users_data.values():
+            user_data['orders'] = {}
+
+def send_text_summary(call):
+    """Текстовая сводка (для быстрого просмотра)"""
+    active_users = {uid: data for uid, data in users_data.items() if data.get('orders')}
+    
+    if not active_users:
+        bot.answer_callback_query(call.id, "Нет заказов")
+        bot.send_message(call.message.chat.id, "📭 Нет заказов за сегодня.")
+        return
+    
+    clients_data = []
+    for user_id, user_data in active_users.items():
+        if user_data.get('orders'):
+            clients_data.append({
+                'name': user_data['location_name'],
+                'address': user_data['address'],
+                'orders': user_data['orders']
+            })
+    
+    clients_data.sort(key=lambda x: x['name'])
+    
+    summary_text = f"📊 **Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}**\n"
+    summary_text += f"👥 Клиентов: {len(clients_data)}\n\n"
     
     for client in clients_data:
         total_items = sum(client['orders'].values())
         order_details = []
         
-        for pos in all_positions:
-            qty = client['orders'].get(pos, 0)
+        for pos, qty in client['orders'].items():
             if qty > 0:
-                # Сокращаем длинные названия для компактности
-                short_pos = pos[:12] + "..." if len(pos) > 15 else pos
-                order_details.append(f"{short_pos}:{qty}")
+                order_details.append(f"{pos}:{qty}")
         
         details_str = ", ".join(order_details)
-        summary_text += f"• **{client['name']}** ({total_items} шт.) - {details_str}\n"
+        summary_text += f"• **{client['name']}** - {total_items} шт.\n"
+        summary_text += f"  {details_str}\n"
         summary_text += f"  📍 {client['address']}\n\n"
     
-    if call:
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, summary_text, parse_mode='Markdown')
-    else:
-        bot.send_message(ADMIN_CHAT_ID, summary_text, parse_mode='Markdown')
-        
-        # Автоматически очищаем заказы после отправки сводки
-        for user_data in users_data.values():
-            user_data['orders'] = {}
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, summary_text, parse_mode='Markdown')
 
 def show_clients_list(call):
     """Показать список всех клиентов"""
@@ -402,7 +449,7 @@ def scheduler():
     while True:
         now = datetime.now(msk_tz)
         if now.hour == 20 and now.minute == 0:
-            send_summary()
+            send_csv_summary()
         time.sleep(60)
 
 def setup_webhook():
