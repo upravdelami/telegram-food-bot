@@ -7,46 +7,31 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, request, abort
 import threading
 
-# Твой токен от BotFather - ИЗМЕНЕНО для Railway
 TOKEN = os.environ.get('BOT_TOKEN')
 BOT_URL = '/webhook'
-
-# ID чата для сводки
 ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID')
 
 if not TOKEN or not ADMIN_CHAT_ID:
-    raise ValueError("Не установлены BOT_TOKEN или ADMIN_CHAT_ID в переменных окружения")
+    raise ValueError("Не установлены BOT_TOKEN или ADMIN_CHAT_ID")
 
 bot = telebot.TeleBot(TOKEN)
 
-# Доступные позиции с весами (в граммах)
 positions = {
-    'Ватрушка': 200,
-    'Капуста': 130,
-    'Яблоко': 120,
-    'Картофель': 130,
-    'Мак': 190,
-    'Плюшка': 150,
-    'Чечевица': 140,
-    'Повидло': 130,
-    'Корица': 150,
-    'Сосиск в тесте': 150,
-    'Брусника': 130,
-    'Вишня': 130,
-    'Черная смородина': 130,
-    'Творог с зеленью': 130
+    'Ватрушка': 200, 'Капуста': 130, 'Яблоко': 120, 'Картофель': 130,
+    'Мак': 190, 'Плюшка': 150, 'Чечевица': 140, 'Повидло': 130,
+    'Корица': 150, 'Сосиск в тесте': 150, 'Брусника': 130,
+    'Вишня': 130, 'Черная смородина': 130, 'Творог с зеленью': 130
 }
 
-# Хранение заказов: {username: {'позиция': количество}}
-orders = {}
-
-# Текущий заказ пользователя (для multi-step: выбор позиции -> количество)
-current_orders = {}  # {user_id: {'position': str}}
+# Хранение данных: {user_id: {'address': '', 'location_name': '', 'orders': {}}}
+users_data = {}
+# Текущий заказ пользователя
+current_orders = {}
+# Регистрация пользователей: {user_id: 'waiting_address'/'waiting_location'}
+registration_steps = {}
 
 app = Flask(__name__)
 
-
-# Webhook эндпоинт
 @app.route(BOT_URL, methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
@@ -57,90 +42,336 @@ def webhook():
     else:
         abort(403)
 
-
 @app.route('/')
 def index():
     return "Бот работает на Railway! 🚂"
 
+def get_user_data(user_id):
+    """Получить данные пользователя"""
+    if user_id not in users_data:
+        users_data[user_id] = {
+            'address': '',
+            'location_name': '', 
+            'orders': {},
+            'registered': False
+        }
+    return users_data[user_id]
 
 @bot.message_handler(commands=['start'])
 def start(message: Message):
+    user_id = message.from_user.id
+    user_data = get_user_data(user_id)
+    
+    if not user_data['registered']:
+        start_registration(message)
+    else:
+        show_main_menu(message.chat.id, user_data)
+
+def start_registration(message):
+    """Начать процесс регистрации"""
+    user_id = message.from_user.id
+    registration_steps[user_id] = 'waiting_location'
+    
+    bot.send_message(
+        message.chat.id,
+        "👋 Добро пожаловать! Давайте зарегистрируем вас.\n\n"
+        "📝 **Как называется ваша точка/магазин?**\n"
+        "Например: 'Магазин у дома', 'Офис на Ленина', 'Кафе Уют'"
+    )
+
+@bot.message_handler(commands=['admin'])
+def admin_panel(message: Message):
+    """Панель администратора"""
+    if str(message.chat.id) != ADMIN_CHAT_ID:
+        bot.reply_to(message, "❌ Доступ запрещен")
+        return
+    
     markup = InlineKeyboardMarkup(row_width=2)
-    for pos in positions.keys():
-        markup.add(InlineKeyboardButton(pos, callback_data=pos))
+    buttons = [
+        InlineKeyboardButton('📊 Сводка заказов', callback_data='admin_summary'),
+        InlineKeyboardButton('👥 Список клиентов', callback_data='admin_clients'),
+        InlineKeyboardButton('🔄 Обнулить заказы', callback_data='admin_clear'),
+    ]
+    markup.add(*buttons)
+    
+    bot.send_message(message.chat.id, "⚙️ **Панель администратора**", reply_markup=markup)
 
-    bot.reply_to(message, "Привет! Выбери позицию для заказа:", reply_markup=markup)
+@bot.message_handler(func=lambda message: True)
+def handle_messages(message: Message):
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    
+    # Обработка регистрации
+    if user_id in registration_steps:
+        handle_registration(message)
+        return
+    
+    # Обработка количества для заказов
+    if user_id in current_orders:
+        handle_quantity(message)
+        return
+    
+    bot.reply_to(message, "Используйте меню для навигации")
 
+def handle_registration(message: Message):
+    """Обработка шагов регистрации"""
+    user_id = message.from_user.id
+    step = registration_steps.get(user_id)
+    user_data = get_user_data(user_id)
+    
+    if step == 'waiting_location':
+        user_data['location_name'] = message.text.strip()
+        registration_steps[user_id] = 'waiting_address'
+        
+        bot.send_message(
+            message.chat.id,
+            "📍 **Теперь укажите адрес доставки:**\n"
+            "Например: 'ул. Ленина, 15', 'ТЦ Центральный, 2 этаж'"
+        )
+        
+    elif step == 'waiting_address':
+        user_data['address'] = message.text.strip()
+        user_data['registered'] = True
+        del registration_steps[user_id]
+        
+        bot.send_message(
+            message.chat.id,
+            f"✅ **Регистрация завершена!**\n\n"
+            f"🏪 Точка: {user_data['location_name']}\n"
+            f"📍 Адрес: {user_data['address']}\n\n"
+            f"Теперь вы можете делать заказы!",
+            parse_mode='Markdown'
+        )
+        
+        show_main_menu(message.chat.id, user_data)
+
+def show_main_menu(chat_id, user_data):
+    """Показать главное меню"""
+    markup = InlineKeyboardMarkup(row_width=2)
+    buttons = [
+        InlineKeyboardButton('➕ Добавить заказ', callback_data='add_order'),
+        InlineKeyboardButton('📋 Мой заказ', callback_data='my_order'),
+        InlineKeyboardButton('✏️ Изменить заказ', callback_data='edit_order'),
+        InlineKeyboardButton('🏪 Мои данные', callback_data='my_data'),
+    ]
+    markup.add(*buttons[:2])
+    markup.add(*buttons[2:])
+    
+    welcome_text = f"🏪 {user_data['location_name']}\n📍 {user_data['address']}\n\nВыберите действие:"
+    bot.send_message(chat_id, welcome_text, reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     user_id = call.from_user.id
-    position = call.data
+    chat_id = call.message.chat.id
+    user_data = get_user_data(user_id)
+    
+    if call.data == 'add_order':
+        show_positions_menu(chat_id)
+    elif call.data == 'my_order':
+        show_user_order(call, user_data)
+    elif call.data == 'edit_order':
+        show_edit_menu(call, user_data)
+    elif call.data == 'my_data':
+        show_user_data(call, user_data)
+    elif call.data == 'admin_summary':
+        send_summary(call)
+    elif call.data == 'admin_clients':
+        show_clients_list(call)
+    elif call.data == 'admin_clear':
+        clear_all_orders(call)
+    elif call.data in positions:
+        current_orders[user_id] = {'position': call.data}
+        bot.answer_callback_query(call.id, f"Выбрано: {call.data}")
+        bot.send_message(chat_id, f"Сколько штук {call.data} (вес: {positions[call.data]} гр.)?")
+    elif call.data.startswith('edit_'):
+        position = call.data[5:]
+        current_orders[user_id] = {'position': position, 'editing': True}
+        bot.answer_callback_query(call.id, f"Изменяем: {position}")
+        bot.send_message(chat_id, f"Введите новое количество для {position}:")
 
-    if position in positions:
-        current_orders[user_id] = {'position': position}
-        bot.answer_callback_query(call.id, f"Выбрано: {position}")
-        bot.send_message(call.message.chat.id, f"Сколько штук {position} (вес: {positions[position]} гр.)?")
-    else:
-        bot.answer_callback_query(call.id, "Неверная позиция")
+def show_positions_menu(chat_id):
+    markup = InlineKeyboardMarkup(row_width=2)
+    for pos in positions.keys():
+        markup.add(InlineKeyboardButton(pos, callback_data=pos))
+    markup.add(InlineKeyboardButton('↩️ Назад', callback_data='back_to_main'))
+    
+    bot.send_message(chat_id, "Выберите позицию для заказа:", reply_markup=markup)
 
+def show_user_order(call, user_data):
+    user_orders = user_data['orders']
+    
+    if not user_orders:
+        bot.answer_callback_query(call.id, "У вас нет заказов")
+        bot.send_message(call.message.chat.id, "📭 У вас еще нет заказов на сегодня.")
+        return
+    
+    total_items = sum(user_orders.values())
+    total_weight = sum(positions[pos] * qty for pos, qty in user_orders.items())
+    
+    order_text = f"🏪 **{user_data['location_name']}**\n"
+    order_text += f"📍 {user_data['address']}\n\n"
+    order_text += "📋 **Ваш заказ на сегодня:**\n\n"
+    
+    for pos, qty in user_orders.items():
+        weight = positions[pos] * qty
+        order_text += f"• {pos}: {qty} шт. ({weight} гр.)\n"
+    
+    order_text += f"\n📊 **Итого:** {total_items} шт., {total_weight} гр."
+    
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, order_text, parse_mode='Markdown')
 
-@bot.message_handler(func=lambda message: True)
+def show_user_data(call, user_data):
+    user_orders = user_data['orders']
+    total_items = sum(user_orders.values()) if user_orders else 0
+    
+    data_text = "👤 **Ваши данные:**\n\n"
+    data_text += f"🏪 **Точка:** {user_data['location_name']}\n"
+    data_text += f"📍 **Адрес:** {user_data['address']}\n"
+    data_text += f"📦 **Заказов сегодня:** {total_items} шт.\n\n"
+    data_text += "_Чтобы изменить данные, перезапустите бота /start_"
+    
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, data_text, parse_mode='Markdown')
+
+def show_edit_menu(call, user_data):
+    user_orders = user_data['orders']
+    
+    if not user_orders:
+        bot.answer_callback_query(call.id, "Нет заказов для редактирования")
+        return
+    
+    markup = InlineKeyboardMarkup(row_width=2)
+    
+    for pos in user_orders.keys():
+        markup.add(InlineKeyboardButton(f"✏️ {pos}", callback_data=f'edit_{pos}'))
+    
+    markup.add(InlineKeyboardButton('➕ Добавить еще', callback_data='add_order'))
+    markup.add(InlineKeyboardButton('🗑️ Очистить все', callback_data='clear_order'))
+    markup.add(InlineKeyboardButton('↩️ Назад', callback_data='back_to_main'))
+    
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, "Выберите позицию для изменения:", reply_markup=markup)
+
 def handle_quantity(message: Message):
     user_id = message.from_user.id
-    if user_id not in current_orders:
-        bot.reply_to(message, "Сначала выбери позицию через /start")
-        return
-
-    position = current_orders[user_id]['position']
+    chat_id = message.chat.id
+    user_data = get_user_data(user_id)
+    
+    position_data = current_orders[user_id]
+    position = position_data['position']
+    is_editing = position_data.get('editing', False)
+    
     try:
         quantity = int(message.text.strip())
-        if quantity <= 0:
+        if quantity < 0:
             raise ValueError
-
-        username = message.from_user.username or f"User_{user_id}"
-        if username not in orders:
-            orders[username] = {}
-
-        if position in orders[username]:
-            orders[username][position] += quantity
+        
+        if quantity == 0:
+            if position in user_data['orders']:
+                del user_data['orders'][position]
+            action_text = f"❌ Удалено: {position}"
         else:
-            orders[username][position] = quantity
-
-        bot.reply_to(message, f"Добавлено {quantity} шт. {position} для {username}!")
-        del current_orders[user_id]  # Сброс после заказа
-
-        # Показать меню снова
-        start(message)
+            user_data['orders'][position] = quantity
+            action_text = f"{'✏️ Обновлено' if is_editing else '✅ Добавлено'} {quantity} шт. {position}"
+        
+        bot.reply_to(message, f"{action_text} для {user_data['location_name']}!")
+        del current_orders[user_id]
+        
+        show_main_menu(chat_id, user_data)
+        
     except ValueError:
-        bot.reply_to(message, "Введи положительное число!")
+        bot.reply_to(message, "Введите целое число (0 для удаления позиции):")
 
-
-# Функция сводки
-def send_summary():
-    if not orders:
-        bot.send_message(ADMIN_CHAT_ID, "Нет заказов за день.")
+def send_summary(call=None):
+    """Отправка сводки заказов"""
+    active_users = {uid: data for uid, data in users_data.items() if data.get('orders')}
+    
+    if not active_users:
+        if call:
+            bot.answer_callback_query(call.id, "Нет заказов")
+            bot.send_message(call.message.chat.id, "📭 Нет заказов за сегодня.")
+        else:
+            bot.send_message(ADMIN_CHAT_ID, "📭 Нет заказов за сегодня.")
         return
-
+    
     all_positions = sorted(positions.keys())
-    clients = sorted(orders.keys())
-
-    # Таблица в Markdown
-    table = "| Позиция | Вес (гр.) | " + " | ".join(clients) + " |\n"
-    table += "| --- | --- | " + " | ".join(["---"] * len(clients)) + " |\n"
-
+    clients_data = []
+    
+    # Собираем данные клиентов
+    for user_id, user_data in active_users.items():
+        if user_data.get('orders'):
+            clients_data.append({
+                'name': user_data['location_name'],
+                'address': user_data['address'],
+                'orders': user_data['orders']
+            })
+    
+    # Сортируем по названию точки
+    clients_data.sort(key=lambda x: x['name'])
+    
+    # Формируем таблицу
+    table = "| Позиция | Вес | " + " | ".join([client['name'] for client in clients_data]) + " |\n"
+    table += "| --- | --- | " + " | ".join(["---"] * len(clients_data)) + " |\n"
+    
     for pos in all_positions:
         row = f"| {pos} | {positions[pos]} |"
-        for client in clients:
-            qty = orders.get(client, {}).get(pos, 0)
+        for client in clients_data:
+            qty = client['orders'].get(pos, 0)
             row += f" {qty} |"
         table += row + "\n"
+    
+    # Итоги
+    summary_text = "📊 **Сводка заказов на сегодня**\n\n"
+    summary_text += table + "\n"
+    
+    # Детали по клиентам
+    summary_text += "**Детали заказов:**\n"
+    for client in clients_data:
+        total_items = sum(client['orders'].values())
+        total_weight = sum(positions[pos] * qty for pos, qty in client['orders'].items())
+        summary_text += f"• {client['name']} ({client['address']}): {total_items} шт., {total_weight} гр.\n"
+    
+    if call:
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, summary_text, parse_mode='Markdown')
+    else:
+        bot.send_message(ADMIN_CHAT_ID, summary_text, parse_mode='Markdown')
+        
+        # Автоматически очищаем заказы после отправки сводки
+        for user_data in users_data.values():
+            user_data['orders'] = {}
 
-    bot.send_message(ADMIN_CHAT_ID, "Сводка заказов за день:\n" + table, parse_mode='Markdown')
-    orders.clear()
+def show_clients_list(call):
+    """Показать список всех клиентов"""
+    registered_users = [data for data in users_data.values() if data['registered']]
+    
+    if not registered_users:
+        bot.answer_callback_query(call.id, "Нет зарегистрированных клиентов")
+        bot.send_message(call.message.chat.id, "👥 Нет зарегистрированных клиентов.")
+        return
+    
+    clients_text = "👥 **Зарегистрированные клиенты:**\n\n"
+    
+    for i, user_data in enumerate(registered_users, 1):
+        order_count = sum(user_data['orders'].values())
+        clients_text += f"{i}. **{user_data['location_name']}**\n"
+        clients_text += f"   📍 {user_data['address']}\n"
+        clients_text += f"   📦 Заказов сегодня: {order_count} шт.\n\n"
+    
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, clients_text, parse_mode='Markdown')
 
+def clear_all_orders(call):
+    """Очистить все заказы"""
+    for user_data in users_data.values():
+        user_data['orders'] = {}
+    
+    bot.answer_callback_query(call.id, "Все заказы очищены")
+    bot.send_message(call.message.chat.id, "🗑️ Все заказы очищены!")
 
-# Планировщик
+# Планировщик для автоматической сводки
 def scheduler():
     msk_tz = timezone(timedelta(hours=3))
     while True:
@@ -149,31 +380,18 @@ def scheduler():
             send_summary()
         time.sleep(60)
 
-
 def setup_webhook():
-    """Настройка webhook для Railway"""
     bot.remove_webhook()
     time.sleep(1)
-
-    # ИЗМЕНЕНО: Получаем URL автоматически от Railway
     railway_url = os.environ.get('RAILWAY_STATIC_URL')
     if not railway_url:
-        # Если переменной нет, используем стандартный Railway домен
         app_name = os.environ.get('RAILWAY_PROJECT_NAME', 'your-app-name')
         railway_url = f"https://{app_name}.up.railway.app"
-
     webhook_url = f"{railway_url}{BOT_URL}"
-    print(f"Setting webhook to: {webhook_url}")
     bot.set_webhook(webhook_url)
 
-
 if __name__ == '__main__':
-    # Настраиваем webhook при запуске
     setup_webhook()
-
-    # Запускаем планировщик в отдельном потоке
     threading.Thread(target=scheduler, daemon=True).start()
-
-    # Запускаем Flask приложение
     port = int(os.environ.get('PORT', 8000))
     app.run(host='0.0.0.0', port=port)
