@@ -183,7 +183,7 @@ def handle_callback(call):
     elif call.data in positions:
         current_orders[user_id] = {'position': call.data}
         bot.answer_callback_query(call.id, f"Выбрано: {call.data}")
-        bot.send_message(chat_id, f"Сколько штук {call.data} (вес: {positions[call.data]} гр.)?")
+        bot.send_message(chat_id, f"Сколько штук {call.data}?")
     elif call.data.startswith('edit_'):
         position = call.data[5:]
         current_orders[user_id] = {'position': position, 'editing': True}
@@ -207,17 +207,15 @@ def show_user_order(call, user_data):
         return
     
     total_items = sum(user_orders.values())
-    total_weight = sum(positions[pos] * qty for pos, qty in user_orders.items())
     
     order_text = f"🏪 **{user_data['location_name']}**\n"
     order_text += f"📍 {user_data['address']}\n\n"
     order_text += "📋 **Ваш заказ на сегодня:**\n\n"
     
     for pos, qty in user_orders.items():
-        weight = positions[pos] * qty
-        order_text += f"• {pos}: {qty} шт. ({weight} гр.)\n"
+        order_text += f"• {pos}: {qty} шт.\n"
     
-    order_text += f"\n📊 **Итого:** {total_items} шт., {total_weight} гр."
+    order_text += f"\n📊 **Итого:** {total_items} шт."
     
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, order_text, parse_mode='Markdown')
@@ -311,27 +309,53 @@ def send_summary(call=None):
     # Сортируем по названию точки
     clients_data.sort(key=lambda x: x['name'])
     
-    # Формируем таблицу
-    table = "| Позиция | Вес | " + " | ".join([client['name'] for client in clients_data]) + " |\n"
-    table += "| --- | --- | " + " | ".join(["---"] * len(clients_data)) + " |\n"
+    # Формируем улучшенную таблицу
+    summary_text = "📊 **СВОДКА ЗАКАЗОВ**\n"
+    summary_text += f"📅 {datetime.now().strftime('%d.%m.%Y')}\n"
+    summary_text += f"👥 Клиентов: {len(clients_data)}\n\n"
+    
+    # Заголовок таблицы
+    header = "┌" + "─" * 20 + "┬" + "─" * 6 + "┐\n"
+    header += "│ Позиция           │ Всего │\n"
+    header += "├" + "─" * 20 + "┼" + "─" * 6 + "┤\n"
+    
+    # Тело таблицы с итогами по позициям
+    table_body = ""
+    total_all = 0
     
     for pos in all_positions:
-        row = f"| {pos} | {positions[pos]} |"
+        pos_total = 0
         for client in clients_data:
-            qty = client['orders'].get(pos, 0)
-            row += f" {qty} |"
-        table += row + "\n"
+            pos_total += client['orders'].get(pos, 0)
+        
+        if pos_total > 0:  # Показываем только позиции с заказами
+            table_body += f"│ {pos:<18} │ {pos_total:>5} │\n"
+            total_all += pos_total
     
-    # Итоги
-    summary_text = "📊 **Сводка заказов на сегодня**\n\n"
-    summary_text += table + "\n"
+    # Итоговая строка
+    footer = "├" + "─" * 20 + "┼" + "─" * 6 + "┤\n"
+    footer += f"│ ИТОГО             │ {total_all:>5} │\n"
+    footer += "└" + "─" * 20 + "┴" + "─" * 6 + "┘\n"
+    
+    summary_text += "```\n" + header + table_body + footer + "```\n\n"
     
     # Детали по клиентам
-    summary_text += "**Детали заказов:**\n"
+    summary_text += "**ДЕТАЛИ ПО КЛИЕНТАМ:**\n"
+    
     for client in clients_data:
         total_items = sum(client['orders'].values())
-        total_weight = sum(positions[pos] * qty for pos, qty in client['orders'].items())
-        summary_text += f"• {client['name']} ({client['address']}): {total_items} шт., {total_weight} гр.\n"
+        order_details = []
+        
+        for pos in all_positions:
+            qty = client['orders'].get(pos, 0)
+            if qty > 0:
+                # Сокращаем длинные названия для компактности
+                short_pos = pos[:12] + "..." if len(pos) > 15 else pos
+                order_details.append(f"{short_pos}:{qty}")
+        
+        details_str = ", ".join(order_details)
+        summary_text += f"• **{client['name']}** ({total_items} шт.) - {details_str}\n"
+        summary_text += f"  📍 {client['address']}\n\n"
     
     if call:
         bot.answer_callback_query(call.id)
@@ -352,13 +376,14 @@ def show_clients_list(call):
         bot.send_message(call.message.chat.id, "👥 Нет зарегистрированных клиентов.")
         return
     
-    clients_text = "👥 **Зарегистрированные клиенты:**\n\n"
+    clients_text = "👥 **ЗАРЕГИСТРИРОВАННЫЕ КЛИЕНТЫ**\n\n"
     
     for i, user_data in enumerate(registered_users, 1):
         order_count = sum(user_data['orders'].values())
+        status = "✅ Есть заказы" if order_count > 0 else "⏳ Нет заказов"
         clients_text += f"{i}. **{user_data['location_name']}**\n"
         clients_text += f"   📍 {user_data['address']}\n"
-        clients_text += f"   📦 Заказов сегодня: {order_count} шт.\n\n"
+        clients_text += f"   📦 {status} ({order_count} шт.)\n\n"
     
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, clients_text, parse_mode='Markdown')
