@@ -525,8 +525,9 @@ def send_excel_summary(call=None):
             return
         
         filename = f"заказы_{datetime.now().strftime('%d.%m.%Y')}.xlsx"
+        excel_buffer.name = filename  # Устанавливаем атрибут name для InputFile
         
-        input_file = telebot.types.InputFile(excel_buffer, filename=filename)
+        input_file = telebot.types.InputFile(excel_buffer)
         
         if call:
             bot.answer_callback_query(call.id)
@@ -702,9 +703,11 @@ def export_all_data(call):
         }
         
         export_json = json.dumps(export_data, ensure_ascii=False, indent=2).encode('utf-8')
+        json_buffer = io.BytesIO(export_json)
         filename = f"backup_data_{datetime.now().strftime('%Y%m%d_%H%M')}.json"
+        json_buffer.name = filename  # Устанавливаем name для InputFile
         
-        input_file = telebot.types.InputFile(io.BytesIO(export_json), filename=filename)
+        input_file = telebot.types.InputFile(json_buffer)
         
         bot.answer_callback_query(call.id)
         bot.send_document(
