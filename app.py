@@ -28,9 +28,12 @@ positions = {
     'Вишня': 130, 'Черная смородина': 130, 'Творог с зеленью': 130
 }
 
-# Файлы для хранения данных
-USERS_DB_FILE = 'users_data.json'
-ORDERS_DB_FILE = 'orders_history.json'
+# Файлы для хранения данных (теперь в persistent volume)
+DATA_DIR = '/data'
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR)  # Создаем директорию, если нет
+USERS_DB_FILE = os.path.join(DATA_DIR, 'users_data.json')
+ORDERS_DB_FILE = os.path.join(DATA_DIR, 'orders_history.json')
 
 # Временные данные (в оперативной памяти)
 current_orders = {}
