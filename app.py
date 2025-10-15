@@ -101,8 +101,8 @@ def add_order_to_history(user_data, date_str):
 users_data = load_users_data()
 orders_history = load_orders_history()
 
-print(f"📊 Загружено пользователей: {len(users_data)}")
-print(f"📦 Загружено дней в истории: {len(orders_history)}")
+print(f"Загружено пользователей: {len(users_data)}")
+print(f"Загружено дней в истории: {len(orders_history)}")
 
 @app.route(BOT_URL, methods=['POST'])
 def webhook():
@@ -120,7 +120,7 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "Бот работает на Railway! 🚂"
+    return "Бот работает на Railway!"
 
 def get_user_data(user_id):
     """Получить данные пользователя"""
@@ -154,8 +154,8 @@ def start_registration(message):
     
     bot.send_message(
         message.chat.id,
-        "👋 Добро пожаловать! Давайте зарегистрируем вас.\n\n"
-        "📝 **Как называется ваша точка/магазин?**\n"
+        "Добро пожаловать! Давайте зарегистрируем вас.\n\n"
+        "**Как называется ваша точка/магазин?**\n"
         "Например: 'Магазин у дома', 'Офис на Ленина', 'Кафе Уют'"
     )
 
@@ -163,23 +163,24 @@ def start_registration(message):
 def admin_panel(message: Message):
     """Панель администратора"""
     if str(message.chat.id) != ADMIN_CHAT_ID:
-        bot.reply_to(message, "❌ Доступ запрещен")
+        bot.reply_to(message, "Доступ запрещен")
         return
     
     markup = InlineKeyboardMarkup(row_width=2)
     buttons = [
-        InlineKeyboardButton('📊 Excel Сводка', callback_data='admin_excel'),
-        InlineKeyboardButton('📋 Текстовая сводка', callback_data='admin_summary'),
-        InlineKeyboardButton('👥 База клиентов', callback_data='admin_clients'),
-        InlineKeyboardButton('📈 История заказов', callback_data='admin_history'),
-        InlineKeyboardButton('🔄 Обнулить заказы', callback_data='admin_clear'),
-        InlineKeyboardButton('💾 Экспорт данных', callback_data='admin_export'),
+        InlineKeyboardButton('Excel Сводка', callback_data='admin_excel'),
+        InlineKeyboardButton('Текстовая сводка', callback 'admin_summary'),
+        InlineKeyboardButton('База клиентов', callback_data='admin_clients'),
+        InlineKeyboardButton('Удалить клиентов', callback_data='admin_delete_clients'),  # Новая кнопка
+        InlineKeyboardButton('История заказов', callback_data='admin_history'),
+        InlineKeyboardButton('Обнулить заказы', callback_data='admin_clear'),
+        InlineKeyboardButton('Экспорт данных', callback_data='admin_export'),
     ]
     markup.add(*buttons)
     
-    stats_text = f"📊 **Статистика:**\n👥 Клиентов: {len(users_data)}\n📦 Дней в истории: {len(orders_history)}"
+    stats_text = f"**Статистика:**\nКлиентов: {len(users_data)}\nДней в истории: {len(orders_history)}"
     
-    bot.send_message(message.chat.id, f"⚙️ **Панель администратора**\n\n{stats_text}", reply_markup=markup)
+    bot.send_message(message.chat.id, f"**Панель администратора**\n\n{stats_text}", reply_markup=markup)
 
 @bot.message_handler(func=lambda message: True)
 def handle_messages(message: Message):
@@ -210,7 +211,7 @@ def handle_registration(message: Message):
         
         bot.send_message(
             message.chat.id,
-            "📍 **Теперь укажите адрес доставки:**\n"
+            "**Теперь укажите адрес доставки:**\n"
             "Например: 'ул. Ленина, 15', 'ТЦ Центральный, 2 этаж'"
         )
         
@@ -224,9 +225,9 @@ def handle_registration(message: Message):
         
         bot.send_message(
             message.chat.id,
-            f"✅ **Регистрация завершена!**\n\n"
-            f"🏪 Точка: {user_data['location_name']}\n"
-            f"📍 Адрес: {user_data['address']}\n\n"
+            f"**Регистрация завершена!**\n\n"
+            f"Точка: {user_data['location_name']}\n"
+            f"Адрес: {user_data['address']}\n\n"
             f"Теперь вы можете делать заказы!"
         )
         
@@ -236,14 +237,14 @@ def show_main_menu(chat_id, user_data):
     """Показать главное меню"""
     markup = InlineKeyboardMarkup(row_width=2)
     buttons = [
-        InlineKeyboardButton('➕ Добавить заказ', callback_data='add_order'),
-        InlineKeyboardButton('📋 Мой заказ', callback_data='my_order'),
-        InlineKeyboardButton('✏️ Изменить заказ', callback_data='edit_order'),
-        InlineKeyboardButton('🏪 Мои данные', callback_data='my_data'),
+        InlineKeyboardButton('Добавить заказ', callback_data='add_order'),
+        InlineKeyboard( 'Мой заказ', callback_data='my_order'),
+        InlineKeyboardButton('Изменить заказ', callback_data='edit_order'),
+        InlineKeyboardButton('Мои данные', callback_data='my_data'),
     ]
     markup.add(*buttons)
     
-    welcome_text = f"🏪 {user_data['location_name']}\n📍 {user_data['address']}\n\nВыберите действие:"
+    welcome_text = f"{user_data['location_name']}\n{user_data['address']}\n\nВыберите действие:"
     bot.send_message(chat_id, welcome_text, reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -266,6 +267,8 @@ def handle_callback(call):
         send_text_summary(call)
     elif call.data == 'admin_clients':
         show_clients_database(call)
+    elif call.data == 'admin_delete_clients':  # Новый обработчик для удаления
+        show_delete_clients_menu(call)
     elif call.data == 'admin_history':
         show_orders_history(call)
     elif call.data == 'admin_clear':
@@ -291,16 +294,22 @@ def handle_callback(call):
         bot.answer_callback_query(call.id, "Заказ очищен")
         bot.delete_message(chat_id, call.message.message_id)
         show_main_menu(chat_id, user_data)
+    elif call.data.startswith('delete_user_'):  # Новый обработчик удаления клиента
+        delete_user(call)
     elif call.data == 'admin_stats':
         bot.answer_callback_query(call.id, "Детальная статистика")
         # Заглушка: Можно добавить расчет (например, топ позиций за неделю)
-        bot.send_message(chat_id, "📈 Детальная статистика (в разработке): \n- Общее заказов: ...\n- Топ позиция: ...")
+        bot.send_message(chat_id, "Детальная статистика (в разработке): \n- Общее заказов: ...\n- Топ позиция: ...")
+    elif call.data == 'back_to_admin':
+        bot.answer_callback_query(call.id)
+        bot.delete_message(chat_id, call.message.message_id)
+        admin_panel(call.message)  # Возврат в админку
 
 def show_positions_menu(chat_id):
     markup = InlineKeyboardMarkup(row_width=2)
     for pos in positions.keys():
         markup.add(InlineKeyboardButton(pos, callback_data=pos))
-    markup.add(InlineKeyboardButton('↩️ Назад', callback_data='back_to_main'))
+    markup.add(InlineKeyboardButton('Назад', callback_data='back_to_main'))
     
     bot.send_message(chat_id, "Выберите позицию для заказа:", reply_markup=markup)
 
@@ -309,33 +318,33 @@ def show_user_order(call, user_data):
     
     if not user_orders:
         bot.answer_callback_query(call.id, "У вас нет заказов")
-        bot.send_message(call.message.chat.id, "📭 У вас еще нет заказов на сегодня.")
+        bot.send_message(call.message.chat.id, "У вас еще нет заказов на сегодня.")
         return
     
     total_items = sum(user_orders.values())
     
-    order_text = f"🏪 **{user_data['location_name']}**\n"
-    order_text += f"📍 {user_data['address']}\n\n"
-    order_text += "📋 **Ваш заказ на сегодня:**\n\n"
+    order_text = f"**{user_data['location_name']}**\n"
+    order_text += f"{user_data['address']}\n\n"
+    order_text += "**Ваш заказ на сегодня:**\n\n"
     
     for pos, qty in user_orders.items():
         order_text += f"• {pos}: {qty} шт.\n"
     
-    order_text += f"\n📊 **Итого:** {total_items} шт."
+    order_text += f"\n**Итого:** {total_items} шт."
     
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, order_text)
 
-def show_user_data(call, user_data):
+def show_user_data(cal l, user_data):
     user_orders = user_data['orders']
     total_items = sum(user_orders.values()) if user_orders else 0
     
-    data_text = "👤 **Ваши данные:**\n\n"
-    data_text += f"🏪 **Точка:** {user_data['location_name']}\n"
-    data_text += f"📍 **Адрес:** {user_data['address']}\n"
-    data_text += f"📅 **Дата регистрации:** {user_data.get('registration_date', 'неизвестно')}\n"
-    data_text += f"📦 **Заказов сегодня:** {total_items} шт.\n\n"
-    data_text += "_Чтобы изменить данные, перезапустите бота /start _"
+    data_text = "**Ваши данные:**\n\n"
+    data_text += f"**Точка:** {user_data['location_name']}\n"
+    data_text += f"**Адрес:** {user_data['address']}\n"
+    data_text += f"**Дата регистрации:** {user_data.get('registration_date', 'неизвестно')}\n"
+    data_text += f"**Заказов сегодня:** {total_items} шт.\n\n"
+    data_text += "_Чтобы изменить данные, перезапустите бота /start_"
     
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, data_text)
@@ -350,11 +359,11 @@ def show_edit_menu(call, user_data):
     markup = InlineKeyboardMarkup(row_width=2)
     
     for pos in user_orders.keys():
-        markup.add(InlineKeyboardButton(f"✏️ {pos}", callback_data=f'edit_{pos}'))
+        markup.add(InlineKeyboardButton(f"{pos}", callback_data=f'edit_{pos}'))
     
-    markup.add(InlineKeyboardButton('➕ Добавить еще', callback_data='add_order'))
-    markup.add(InlineKeyboardButton('🗑️ Очистить все', callback_data='clear_order'))
-    markup.add(InlineKeyboardButton('↩️ Назад', callback_data='back_to_main'))
+    markup.add(InlineKeyboardButton('Добавить еще', callback_data='add_order'))
+    markup.add(InlineKeyboardButton('Очистить все', callback_data='clear_order'))
+    markup.add(InlineKeyboardButton('Назад', callback_data='back_to_main'))
     
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, "Выберите позицию для изменения:", reply_markup=markup)
@@ -376,10 +385,10 @@ def handle_quantity(message: Message):
         if quantity == 0:
             if position in user_data['orders']:
                 del user_data['orders'][position]
-            action_text = f"❌ Удалено: {position}"
+            action_text = f"Удалено: {position}"
         else:
             user_data['orders'][position] = quantity
-            action_text = f"{'✏️ Обновлено' if is_editing else '✅ Добавлено'} {quantity} шт. {position}"
+            action_text = f"{'Обновлено' if is_editing else 'Добавлено'} {quantity} шт. {position}"
         
         save_users_data()  # Сохраняем после изменения заказа
         
@@ -393,23 +402,13 @@ def handle_quantity(message: Message):
 
 def generate_excel_file():
     """Генерация Excel файла со сводкой"""
-    active_users = {uid: data for uid, data in users_data.items() if data.get('orders')}
+    active_users = [data for data in users_data.values() if data.get('orders') and data.get('registered')]
     
     if not active_users:
         return None
     
-    # Собираем данные клиентов
-    clients_data = []
-    for user_id, user_data in active_users.items():
-        if user_data.get('orders'):
-            clients_data.append({
-                'name': user_data['location_name'],
-                'address': user_data['address'],
-                'orders': user_data['orders']
-            })
-    
     # Сортируем по названию точки
-    clients_data.sort(key=lambda x: x['name'])
+    active_users.sort(key=lambda x: x['location_name'])
     
     # Создаем Excel книгу
     wb = Workbook()
@@ -425,7 +424,9 @@ def generate_excel_file():
                    top=Side(style='thin'), bottom=Side(style='thin'))
     
     # Заголовок
-    ws.merge_cells('A1:H1')
+    num_positions = len(positions)
+    header_end_col = get_column_letter(3 + num_positions + 1)  # №, Точка, positions, ИТОГО
+    ws.merge_cells(f'A1:{header_end_col}1')
     ws['A1'] = f"Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}"
     ws['A1'].font = header_font
     ws['A1'].alignment = center_align
@@ -438,20 +439,21 @@ def generate_excel_file():
     ws.append(headers)
     
     # Применяем стили к заголовкам
+    for_header_row = 3
     for col in range(1, len(headers) + 1):
-        cell = ws.cell(row=3, column=col)
+        cell = ws.cell(row=header_row, column=col)
         cell.font = title_font
         cell.alignment = center_align
         cell.border = border
     
     # Данные по клиентам
     row_num = 4
-    for i, client in enumerate(clients_data, 1):
-        row = [i, client['name'], client['address']]
+    for i, user_data in enumerate(active_users, 1):
+        row = [i, user_data['location_name'], user_data['address']]
         total = 0
         
         for pos in positions.keys():
-            qty = client['orders'].get(pos, 0)
+            qty = user_data['orders'].get(pos, 0)
             row.append(qty)
             total += qty
         
@@ -464,21 +466,24 @@ def generate_excel_file():
             cell.border = border
             if col in [1, len(headers)]:  # № и ИТОГО - жирный
                 cell.font = bold_font
+        row_num += 1
     
     # Итоговая строка
     ws.append([])
+    row_num += 1
     total_row = ['ВСЕГО', '', '']
     
-    for pos in positions.keys():
-        pos_total = sum(client['orders'].get(pos, 0) for client in clients_data)
+    for pos_idx, pos in enumerate(positions.keys(), 3):
+        pos_total = sum(ws.cell(row=r, column=pos_idx+1).value for r in range(4, row_num) if ws.cell(row=r, column=pos_idx+1).value is not None)
         total_row.append(pos_total)
     
-    total_row.append(sum(total_row[3:]))
+    grand_total = sum(total_row[3:])
+    total_row.append(grand_total)
     ws.append(total_row)
     
     # Стили для итоговой строки
     for col in range(1, len(headers) + 1):
-        cell = ws.cell(row=row_num + 2, column=col)
+        cell = ws.cell(row=row_num + 1, column=col)
         cell.font = bold_font
         cell.border = border
         if col >= 4:  # Числовые колонки
@@ -517,119 +522,142 @@ def send_excel_summary(call=None):
         if not excel_buffer:
             if call:
                 bot.answer_callback_query(call.id, "Нет заказов")
-                bot.send_message(call.message.chat.id, "📭 Нет заказов за сегодня.")
+                bot.send_message(call.message.chat.id, "Нет заказов за сегодня.")
             else:
-                bot.send_message(ADMIN_CHAT_ID, "📭 Нет заказов за сегодня.")
+                bot.send_message(ADMIN_CHAT_ID, "Нет заказов за сегодня.")
             return
         
         # Отправляем Excel файл
-        filename = f"заказы_{datetime.now().strftime('%d.%m.%Y')}.xlsx"
+        filename = f"заказы_{datetime.now().str ftime('%d.%m.%Y')}.xlsx"
+        
+        input_file = telebot.types.InputFile(excel_buffer, filename=filename)
         
         if call:
             bot.answer_callback_query(call.id)
             bot.send_document(
                 call.message.chat.id,
-                document=excel_buffer,
-                filename=filename,
-                caption=f"📊 Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}\n\nФайл готов для открытия в Excel"
+                document=input_file,
+                caption=f"Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}\n\nФайл готов для открытия в Excel"
             )
         else:
-            # Сохраняем заказы в историю перед отправкой сводки
+            # Сохра我们订单 в историю перед отправкой сводки
             current_date = datetime.now().strftime('%Y-%m-%d')
-            active_users = {uid: data for uid, data in users_data.items() if data.get('orders')}
-            
-            for user_data in active_users.values():
-                if user_data['orders']:
+            for user_data in users_data.values():
+                if user_data.get('orders') and user_data.get('registered'):
                     add_order_to_history(user_data, current_date)
             
             bot.send_document(
                 ADMIN_CHAT_ID,
-                document=excel_buffer,
-                filename=filename,
-                caption=f"📊 Автоматическая сводка заказов от {datetime.now().strftime('%d.%m.%Y')}"
+                document=input_file,
+                caption=f"Автоматическая сводка заказов от {datetime.now().strftime('%d.%m.%Y')}"
             )
-            
-            # Больше не обнуляем здесь - обнуление только в 23:00
             
     except Exception as e:
         print(f"Ошибка при отправке сводки: {e}")
-        if not call:
-            bot.send_message(ADMIN_CHAT_ID, f"❌ Ошибка при отправке сводки: {e}")
+        if call:
+            bot.send_message(call.message.chat.id, f"Ошибка при генерации Excel: {e}")
+        else:
+            bot.send_message(ADMIN_CHAT_ID, f"Ошибка при отправке сводки: {e}")
 
 def send_text_summary(call):
     """Текстовая сводка (для быстрого просмотра)"""
-    active_users = {uid: data for uid, data in users_data.items() if data.get('orders')}
+    active_users = [data for data in users_data.values() if data.get('orders') and data.get('registered')]
     
     if not active_users:
         bot.answer_callback_query(call.id, "Нет заказов")
-        bot.send_message(call.message.chat.id, "📭 Нет заказов за сегодня.")
+        bot.send_message(call.message.chat.id, "Нет заказов за сегодня.")
         return
     
-    clients_data = []
-    for user_id, user_data in active_users.items():
-        if user_data.get('orders'):
-            clients_data.append({
-                'name': user_data['location_name'],
-                'address': user_data['address'],
-                'orders': user_data['orders']
-            })
+    active_users.sort(key=lambda x: x['location_name'])
     
-    clients_data.sort(key=lambda x: x['name'])
+    summary_text = f"**Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}**\n"
+    summary_text += f"Клиентов: {len(active_users)}\n\n"
     
-    summary_text = f"📊 **Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}**\n"
-    summary_text += f"👥 Клиентов: {len(clients_data)}\n\n"
-    
-    for client in clients_data:
-        total_items = sum(client['orders'].values())
+    for user_data in active_users:
+        total_items = sum(user_data['orders'].values())
         order_details = []
         
-        for pos, qty in client['orders'].items():
+        for pos, qty in user_data['orders'].items():
             if qty > 0:
                 order_details.append(f"{pos}:{qty}")
         
         details_str = ", ".join(order_details)
-        summary_text += f"• **{client['name']}** - {total_items} шт.\n"
+        summary_text += f"• **{user_data['location_name']}** - {total_items} шт.\n"
         summary_text += f"  {details_str}\n"
-        summary_text += f"  📍 {client['address']}\n\n"
+        summary_text += f"  {user_data['address']}\n\n"
     
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, summary_text)
 
 def show_clients_database(call):
     """Показать базу клиентов"""
-    if not users_data:
+    registered_users = [data for data in users_data.values() if data['registered']]
+    
+    if not registered_users:
         bot.answer_callback_query(call.id, "База клиентов пуста")
-        bot.send_message(call.message.chat.id, "👥 База клиентов пуста.")
+        bot.send_message(call.message.chat.id, "База клиентов пуста.")
+        return
+    
+    clients_text = f"**БАЗА КЛИЕНТОВ**\nВсего: {len(registered_users)}\n\n"
+    
+    for i, user_data in enumerate(registered_users, 1):
+        order_count = sum(user_data['orders'].values())
+        last_order = "Сегодня" if order_count > 0 else "Нет заказов"
+        clients_text += f"{i}. **{user_data['location_name']}**\n"
+        clients_text += f"   {user_data['address']}\n"
+        clients_text += f"   Регистрация: {user_data.get('registration_date', 'неизвестно')}\n"
+        clients_text += f"   {last_order} ({order_count} шт.)\n\n"
+    
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, clients_text)
+
+# Новый метод: Показать меню удаления клиентов
+def show_delete_clients_menu(call):
+    if str(call.message.chat.id) != ADMIN_CHAT_ID:
+        bot.answer_callback_query(call.id, "Доступ запрещен")
         return
     
     registered_users = [data for data in users_data.values() if data['registered']]
     
     if not registered_users:
-        bot.answer_callback_query(call.id, "Нет зарегистрированных клиентов")
-        bot.send_message(call.message.chat.id, "👥 Нет зарегистрированных клиентов.")
+        bot.answer_callback_query(call.id, "Нет клиентов для удаления")
+        bot.send_message(call.message.chat.id, "Нет клиентов для удаления.")
         return
     
-    clients_text = f"👥 **БАЗА КЛИЕНТОВ**\n📊 Всего: {len(registered_users)}\n\n"
+    markup = InlineKeyboardMarkup(row_width=1)
+    for user_data in registered_users:
+        button_text = f"Удалить {user_data['location_location']} (ID: {user_data['user_id']})"
+        markup.add(InlineKeyboardButton(button_text, callback_data=f"delete_user_{user_data['user_id']}"))
     
-    for i, user_data in enumerate(registered_users, 1):
-        order_count = sum(user_data['orders'].values())
-        last_order = "✅ Сегодня" if order_count > 0 else "⏳ Нет заказов"
-        clients_text += f"{i}. **{user_data['location_name']}**\n"
-        clients_text += f"   📍 {user_data['address']}\n"
-        clients_text += f"   📅 Регистрация: {user_data.get('registration_date', 'неизвестно')}\n"
-        clients_text += f"   📦 {last_order} ({order_count} шт.)\n\n"
+    markup.add(InlineKeyboardButton('Назад в админ', callback_data='back_to_admin'))
     
     bot.answer_callback_query(call.id)
-    bot.send_message(call.message.chat.id, clients_text)
+    bot.send_message(call.message.chat.id, "Выберите клиента для удаления:", reply_markup=markup)
+
+def delete_user(call):
+    if str(call.message.chat.id) != ADMIN_CHAT_ID:
+        bot.answer_callback_query(call.id, "Доступ запрещен")
+        return
+    
+    user_id_str = call.data.split('_')[-1]
+    if user_id_str in users_data:
+        location_name = users_data[user_id_str]['location_name']
+        del users_data[user_id_str]
+        save_users_data()
+        bot.answer_callback_query(call.id, f"Клиент {location_name} удален")
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        bot.send_message(call.message.chat.id, f"Клиент {location_name} удален из базы (заказы обнулены).")
+    else:
+        bot.answer_callback_query(call.id, "Клиент не найден")
 
 def show_orders_history(call):
     """Показать историю заказов"""
     if not orders_history:
         bot.answer_callback_query(call.id, "История заказов пуста")
-        bot.send_message(call.message.chat.id, "📈 История заказов пуста.")
+        bot.send_message(call.message.chat.id, "История заказов пуста.")
         return
     
-    history_text = f"📈 **ИСТОРИЯ ЗАКАЗОВ**\n📊 Дней в истории: {len(orders_history)}\n\n"
+    history_text = f"**ИСТОРИЯ ЗАКАЗОВ**\nДней в истории: {len(orders_history)}\n\n"
     
     # Показываем последние 7 дней
     sorted_dates = sorted(orders_history.keys(), reverse=True)[:7]
@@ -639,12 +667,12 @@ def show_orders_history(call):
         total_orders = len(date_orders)
         total_items = sum(order['total_items'] for order in date_orders)
         
-        history_text += f"📅 **{datetime.strptime(date_str, '%Y-%m-%d').strftime('%d.%m.%Y')}**\n"
-        history_text += f"   👥 Клиентов: {total_orders}\n"
-        history_text += f"   📦 Товаров: {total_items} шт.\n\n"
+        history_text += f"**{datetime.strptime(date_str, '%Y-%m-%d').strftime('%d.%m.%Y')}**\n"
+        history_text += f"   Клиентов: {total_orders}\n"
+        history_text += f"   Товаров: {total_items} шт.\n\n"
     
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton('📊 Детальная статистика', callback_data='admin_stats'))
+    markup.add(InlineKeyboardButton('Детальная статистика', callback_data='admin_stats'))
     
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, history_text, reply_markup=markup)
@@ -660,7 +688,7 @@ def clear_all_orders(call):
     save_users_data()  # Сохраняем изменения
     
     bot.answer_callback_query(call.id, f"Очищено {cleared_count} заказов")
-    bot.send_message(call.message.chat.id, f"🗑️ Очищены заказы у {cleared_count} клиентов!")
+    bot.send_message(call.message.chat.id, f"Очищены заказы у {cleared_count} клиентов!")
 
 def clear_all_orders_auto():
     """Автоматическая очистка заказов (без уведомления)"""
@@ -686,19 +714,20 @@ def export_all_data(call):
             'export_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
         
-        export_json = json.dumps(export_data, ensure_ascii=False, indent=2)
+        export_json = json.dumps(export_data, ensure_ascii=False, indent=2).encode('utf-8')
         filename = f"backup_data_{datetime.now().strftime('%Y%m%d_%H%M')}.json"
+        
+        input_file = telebot.types.InputFile(io.BytesIO(export_json), filename=filename)
         
         bot.answer_callback_query(call.id)
         bot.send_document(
             call.message.chat.id,
-            document=io.BytesIO(export_json.encode('utf-8')),
-            filename=filename,
-            caption="💾 Полный бэкап данных системы"
+            document=input_file,
+            caption="Полный бэкап данных системы"
         )
     except Exception as e:
         bot.answer_callback_query(call.id, "Ошибка экспорта")
-        bot.send_message(call.message.chat.id, f"❌ Ошибка при экспорте данных: {e}")
+        bot.send_message(call.message.chat.id, f"Ошибка при экспорте данных: {e}")
 
 def check_scheduled_tasks():
     """Проверка запланированных задач"""
@@ -710,34 +739,34 @@ def check_scheduled_tasks():
     
     # Отправка сводки в 20:00
     if now.hour == 20 and now.minute == 0:
-        print("🕗 Время отправки сводки 20:00")
+        print("Время отправки сводки 20:00")
         try:
             send_excel_summary()
-            print("✅ Сводка отправлена")
+            print("Сводка отправлена")
         except Exception as e:
-            print(f"❌ Ошибка отправки сводки: {e}")
+            print(f"Ошибка отправки сводки: {e}")
     
     # Очистка данных в 23:00
     elif now.hour == 23 and now.minute == 0:
-        print("🕚 Время очистки данных 23:00")
+        print("Время очистки данных 23:00")
         try:
             cleared_count = clear_all_orders_auto()
-            bot.send_message(ADMIN_CHAT_ID, f"🗑️ Данные о заказах обнулены, начат новый день. Очищено заказов: {cleared_count}")
-            print("✅ Данные очищены")
+            bot.send_message(ADMIN_CHAT_ID, f"Данные о заказах обнулены, начат новый день. Очищено заказов: {cleared_count}")
+            print("Данные очищены")
         except Exception as e:
-            print(f"❌ Ошибка очистки данных: {e}")
-            bot.send_message(ADMIN_CHAT_ID, f"❌ Ошибка при обнулении данных: {e}")
+            print(f"Ошибка очистки данных: {e}")
+            bot.send_message(ADMIN_CHAT_ID, f"Ошибка при обнулении данных: {e}")
 
 def scheduler():
     """Основной планировщик"""
-    print("🔄 Планировщик запущен")
+    print("Планировщик запущен")
     
     while True:
         try:
             check_scheduled_tasks()
             time.sleep(60)  # Проверяем каждую минуту
         except Exception as e:
-            print(f"❌ Ошибка в планировщике: {e}")
+            print(f"Ошибка в планировщике: {e}")
             time.sleep(60)
 
 def setup_webhook():
@@ -752,12 +781,12 @@ def setup_webhook():
 
 if __name__ == '__main__':
     setup_webhook()
-    print("🚀 Бот запущен")
+    print("Бот запущен")
     
     # Запускаем планировщик в отдельном потоке
     scheduler_thread = threading.Thread(target=scheduler, daemon=True)
     scheduler_thread.start()
-    print("📅 Планировщик задач запущен")
+    print("Планировщик задач запущен")
     
     port = int(os.environ.get('PORT', 8000))
     app.run(host='0.0.0.0', port=port)
