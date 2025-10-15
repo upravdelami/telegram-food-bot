@@ -410,38 +410,43 @@ def generate_excel_file():
 
 def send_excel_summary(call=None):
     """Отправка Excel сводки"""
-    excel_buffer = generate_excel_file()
-    
-    if not excel_buffer:
-        if call:
-            bot.answer_callback_query(call.id, "Нет заказов")
-            bot.send_message(call.message.chat.id, "📭 Нет заказов за сегодня.")
-        else:
-            bot.send_message(ADMIN_CHAT_ID, "📭 Нет заказов за сегодня.")
-        return
-    
-    # Отправляем Excel файл
-    filename = f"заказы_{datetime.now().strftime('%d.%m.%Y')}.xlsx"
-    
-    if call:
-        bot.answer_callback_query(call.id)
-        bot.send_document(
-            call.message.chat.id,
-            document=excel_buffer,
-            visible_file_name=filename,
-            caption=f"📊 Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}\n\nФайл готов для открытия в Excel"
-        )
-    else:
-        bot.send_document(
-            ADMIN_CHAT_ID,
-            document=excel_buffer,
-            visible_file_name=filename,
-            caption=f"📊 Автоматическая сводка заказов от {datetime.now().strftime('%d.%m.%Y')}"
-        )
+    try:
+        excel_buffer = generate_excel_file()
         
-        # Автоматически очищаем заказы после отправки сводки
-        for user_data in users_data.values():
-            user_data['orders'] = {}
+        if not excel_buffer:
+            if call:
+                bot.answer_callback_query(call.id, "Нет заказов")
+                bot.send_message(call.message.chat.id, "📭 Нет заказов за сегодня.")
+            else:
+                bot.send_message(ADMIN_CHAT_ID, "📭 Нет заказов за сегодня.")
+            return
+        
+        # Отправляем Excel файл
+        filename = f"заказы_{datetime.now().strftime('%d.%m.%Y')}.xlsx"
+        
+        if call:
+            bot.answer_callback_query(call.id)
+            bot.send_document(
+                call.message.chat.id,
+                document=excel_buffer,
+                visible_file_name=filename,
+                caption=f"📊 Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}\n\nФайл готов для открытия в Excel"
+            )
+        else:
+            bot.send_document(
+                ADMIN_CHAT_ID,
+                document=excel_buffer,
+                visible_file_name=filename,
+                caption=f"📊 Автоматическая сводка заказов от {datetime.now().strftime('%d.%m.%Y')}"
+            )
+            
+            # Автоматически очищаем заказы после отправки сводки
+            clear_all_orders_auto()
+            
+    except Exception as e:
+        print(f"Ошибка при отправке сводки: {e}")
+        if not call:
+            bot.send_message(ADMIN_CHAT_ID, f"❌ Ошибка при отправке сводки: {e}")
 
 def send_text_summary(call):
     """Текстовая сводка (для быстрого просмотра)"""
@@ -511,14 +516,53 @@ def clear_all_orders(call):
     bot.answer_callback_query(call.id, "Все заказы очищены")
     bot.send_message(call.message.chat.id, "🗑️ Все заказы очищены!")
 
-# Планировщик для автоматической сводки
-def scheduler():
+def clear_all_orders_auto():
+    """Автоматическая очистка заказов (без уведомления)"""
+    cleared_count = 0
+    for user_data in users_data.values():
+        if user_data['orders']:
+            user_data['orders'] = {}
+            cleared_count += 1
+    
+    print(f"Автоматически очищены заказы у {cleared_count} пользователей")
+
+def check_scheduled_tasks():
+    """Проверка запланированных задач"""
     msk_tz = timezone(timedelta(hours=3))
-    while True:
-        now = datetime.now(msk_tz)
-        if now.hour == 20 and now.minute == 0:
+    now = datetime.now(msk_tz)
+    current_time = now.strftime('%H:%M')
+    
+    print(f"Проверка задач в {current_time} MSK")
+    
+    # Отправка сводки в 20:00
+    if now.hour == 20 and now.minute == 0:
+        print("🕗 Время отправки сводки 20:00")
+        try:
             send_excel_summary()
-        time.sleep(60)
+            print("✅ Сводка отправлена")
+        except Exception as e:
+            print(f"❌ Ошибка отправки сводки: {e}")
+    
+    # Очистка данных после 23:00
+    elif now.hour == 23 and now.minute == 0:
+        print("🕚 Время очистки данных 23:00")
+        try:
+            clear_all_orders_auto()
+            print("✅ Данные очищены")
+        except Exception as e:
+            print(f"❌ Ошибка очистки данных: {e}")
+
+def scheduler():
+    """Основной планировщик"""
+    print("🔄 Планировщик запущен")
+    
+    while True:
+        try:
+            check_scheduled_tasks()
+            time.sleep(60)  # Проверяем каждую минуту
+        except Exception as e:
+            print(f"❌ Ошибка в планировщике: {e}")
+            time.sleep(60)
 
 def setup_webhook():
     bot.remove_webhook()
@@ -532,6 +576,12 @@ def setup_webhook():
 
 if __name__ == '__main__':
     setup_webhook()
-    threading.Thread(target=scheduler, daemon=True).start()
+    print("🚀 Бот запущен")
+    
+    # Запускаем планировщик в отдельном потоке
+    scheduler_thread = threading.Thread(target=scheduler, daemon=True)
+    scheduler_thread.start()
+    print("📅 Планировщик задач запущен")
+    
     port = int(os.environ.get('PORT', 8000))
     app.run(host='0.0.0.0', port=port)
