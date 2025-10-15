@@ -1,7 +1,6 @@
 import os
 import telebot
 from telebot.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-import schedule
 import time
 from datetime import datetime, timedelta, timezone
 from flask import Flask, request, abort
@@ -374,7 +373,7 @@ def handle_quantity(message: Message):
     
     position_data = current_orders[user_id]
     position = position_data['position']
-, is_editing = position_data.get('editing', False)
+    is_editing = position_data.get('editing', False)
     
     try:
         quantity = int(message.text.strip())
@@ -534,7 +533,7 @@ def send_excel_summary(call=None):
             bot.send_document(
                 call.message.chat.id,
                 document=input_file,
-                captionstat=f"Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}\n\nФайл готов для открытия в Excel"
+                caption=f"Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}\n\nФайл готов для открытия в Excel"
             )
         else:
             current_date = datetime.now().strftime('%Y-%m-%d')
@@ -761,7 +760,7 @@ def setup_webhook():
     bot.set_webhook(webhook_url)
 
 if __name__ == '__main__':
-俺    setup_webhook()
+    setup_webhook()
     print("Бот запущен")
     
     scheduler_thread = threading.Thread(target=scheduler, daemon=True)
