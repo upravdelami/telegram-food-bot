@@ -103,13 +103,17 @@ print(f"📦 Загружено дней в истории: {len(orders_history)
 
 @app.route(BOT_URL, methods=['POST'])
 def webhook():
-    if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-        return ''
-    else:
-        abort(403)
+    try:
+        if request.headers.get('content-type') == 'application/json':
+            json_string = request.get_data().decode('utf-8')
+            update = telebot.types.Update.de_json(json_string)
+            bot.process_new_updates([update])
+            return ''
+        else:
+            abort(403)
+    except Exception as e:
+        print(f"Ошибка в webhook: {e}")
+        return 'Error', 500
 
 @app.route('/')
 def index():
@@ -168,8 +172,7 @@ def admin_panel(message: Message):
         InlineKeyboardButton('🔄 Обнулить заказы', callback_data='admin_clear'),
         InlineKeyboardButton('💾 Экспорт данных', callback_data='admin_export'),
     ]
-    markup.add(*buttons[:3])
-    markup.add(*buttons[3:])
+    markup.add(*buttons)
     
     stats_text = f"📊 **Статистика:**\n👥 Клиентов: {len(users_data)}\n📦 Дней в истории: {len(orders_history)}"
     
@@ -221,8 +224,7 @@ def handle_registration(message: Message):
             f"✅ **Регистрация завершена!**\n\n"
             f"🏪 Точка: {user_data['location_name']}\n"
             f"📍 Адрес: {user_data['address']}\n\n"
-            f"Теперь вы можете делать заказы!",
-            parse_mode='Markdown'
+            f"Теперь вы можете делать заказы!"
         )
         
         show_main_menu(message.chat.id, user_data)
@@ -236,8 +238,7 @@ def show_main_menu(chat_id, user_data):
         InlineKeyboardButton('✏️ Изменить заказ', callback_data='edit_order'),
         InlineKeyboardButton('🏪 Мои данные', callback_data='my_data'),
     ]
-    markup.add(*buttons[:2])
-    markup.add(*buttons[2:])
+    markup.add(*buttons)
     
     welcome_text = f"🏪 {user_data['location_name']}\n📍 {user_data['address']}\n\nВыберите действие:"
     bot.send_message(chat_id, welcome_text, reply_markup=markup)
@@ -277,6 +278,20 @@ def handle_callback(call):
         current_orders[user_id] = {'position': position, 'editing': True}
         bot.answer_callback_query(call.id, f"Изменяем: {position}")
         bot.send_message(chat_id, f"Введите новое количество для {position}:")
+    elif call.data == 'back_to_main':
+        bot.answer_callback_query(call.id, "Возврат в меню")
+        bot.delete_message(chat_id, call.message.message_id)  # Удаляем предыдущее сообщение
+        show_main_menu(chat_id, user_data)
+    elif call.data == 'clear_order':
+        user_data['orders'] = {}
+        save_users_data()
+        bot.answer_callback_query(call.id, "Заказ очищен")
+        bot.delete_message(chat_id, call.message.message_id)
+        show_main_menu(chat_id, user_data)
+    elif call.data == 'admin_stats':
+        bot.answer_callback_query(call.id, "Детальная статистика")
+        # Заглушка: Можно добавить расчет (например, топ позиций за неделю)
+        bot.send_message(chat_id, "📈 Детальная статистика (в разработке): \n- Общее заказов: ...\n- Топ позиция: ...")
 
 def show_positions_menu(chat_id):
     markup = InlineKeyboardMarkup(row_width=2)
@@ -306,7 +321,7 @@ def show_user_order(call, user_data):
     order_text += f"\n📊 **Итого:** {total_items} шт."
     
     bot.answer_callback_query(call.id)
-    bot.send_message(call.message.chat.id, order_text, parse_mode='Markdown')
+    bot.send_message(call.message.chat.id, order_text)
 
 def show_user_data(call, user_data):
     user_orders = user_data['orders']
@@ -320,7 +335,7 @@ def show_user_data(call, user_data):
     data_text += "_Чтобы изменить данные, перезапустите бота /start_"
     
     bot.answer_callback_query(call.id)
-    bot.send_message(call.message.chat.id, data_text, parse_mode='Markdown')
+    bot.send_message(call.message.chat.id, data_text)
 
 def show_edit_menu(call, user_data):
     user_orders = user_data['orders']
@@ -516,7 +531,7 @@ def send_excel_summary(call=None):
                 caption=f"📊 Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}\n\nФайл готов для открытия в Excel"
             )
         else:
-            # Сохраняем заказы в историю перед очисткой
+            # Сохраняем заказы в историю перед отправкой сводки
             current_date = datetime.now().strftime('%Y-%m-%d')
             active_users = {uid: data for uid, data in users_data.items() if data.get('orders')}
             
@@ -531,8 +546,7 @@ def send_excel_summary(call=None):
                 caption=f"📊 Автоматическая сводка заказов от {datetime.now().strftime('%d.%m.%Y')}"
             )
             
-            # Автоматически очищаем заказы после отправки сводки
-            clear_all_orders_auto()
+            # Больше не обнуляем здесь - обнуление только в 23:00
             
     except Exception as e:
         print(f"Ошибка при отправке сводки: {e}")
@@ -576,7 +590,7 @@ def send_text_summary(call):
         summary_text += f"  📍 {client['address']}\n\n"
     
     bot.answer_callback_query(call.id)
-    bot.send_message(call.message.chat.id, summary_text, parse_mode='Markdown')
+    bot.send_message(call.message.chat.id, summary_text)
 
 def show_clients_database(call):
     """Показать базу клиентов"""
@@ -603,7 +617,7 @@ def show_clients_database(call):
         clients_text += f"   📦 {last_order} ({order_count} шт.)\n\n"
     
     bot.answer_callback_query(call.id)
-    bot.send_message(call.message.chat.id, clients_text, parse_mode='Markdown')
+    bot.send_message(call.message.chat.id, clients_text)
 
 def show_orders_history(call):
     """Показать историю заказов"""
@@ -630,7 +644,7 @@ def show_orders_history(call):
     markup.add(InlineKeyboardButton('📊 Детальная статистика', callback_data='admin_stats'))
     
     bot.answer_callback_query(call.id)
-    bot.send_message(call.message.chat.id, history_text, parse_mode='Markdown', reply_markup=markup)
+    bot.send_message(call.message.chat.id, history_text, reply_markup=markup)
 
 def clear_all_orders(call):
     """Очистить все заказы"""
@@ -657,6 +671,7 @@ def clear_all_orders_auto():
         save_users_data()
     
     print(f"Автоматически очищены заказы у {cleared_count} пользователей")
+    return cleared_count
 
 def export_all_data(call):
     """Экспорт всех данных в JSON"""
@@ -674,7 +689,8 @@ def export_all_data(call):
         bot.answer_callback_query(call.id)
         bot.send_document(
             call.message.chat.id,
-            document=(filename, io.BytesIO(export_json.encode('utf-8'))),
+            document=io.BytesIO(export_json.encode('utf-8')),
+            file_name=filename,
             caption="💾 Полный бэкап данных системы"
         )
     except Exception as e:
@@ -698,14 +714,16 @@ def check_scheduled_tasks():
         except Exception as e:
             print(f"❌ Ошибка отправки сводки: {e}")
     
-    # Очистка данных после 23:00
+    # Очистка данных в 23:00
     elif now.hour == 23 and now.minute == 0:
         print("🕚 Время очистки данных 23:00")
         try:
-            clear_all_orders_auto()
+            cleared_count = clear_all_orders_auto()
+            bot.send_message(ADMIN_CHAT_ID, f"🗑️ Данные о заказах обнулены, начат новый день. Очищено заказов: {cleared_count}")
             print("✅ Данные очищены")
         except Exception as e:
             print(f"❌ Ошибка очистки данных: {e}")
+            bot.send_message(ADMIN_CHAT_ID, f"❌ Ошибка при обнулении данных: {e}")
 
 def scheduler():
     """Основной планировщик"""
