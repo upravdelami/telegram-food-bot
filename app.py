@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, request, abort
 import threading
 import io
+import json
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -27,14 +28,78 @@ positions = {
     'Вишня': 130, 'Черная смородина': 130, 'Творог с зеленью': 130
 }
 
-# Хранение данных: {user_id: {'address': '', 'location_name': '', 'orders': {}}}
-users_data = {}
-# Текущий заказ пользователя
+# Файлы для хранения данных
+USERS_DB_FILE = 'users_data.json'
+ORDERS_DB_FILE = 'orders_history.json'
+
+# Временные данные (в оперативной памяти)
 current_orders = {}
-# Регистрация пользователей: {user_id: 'waiting_address'/'waiting_location'}
 registration_steps = {}
 
 app = Flask(__name__)
+
+def load_users_data():
+    """Загрузка базы клиентов из файла"""
+    try:
+        if os.path.exists(USERS_DB_FILE):
+            with open(USERS_DB_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Ошибка загрузки users_data: {e}")
+    return {}
+
+def save_users_data():
+    """Сохранение базы клиентов в файл"""
+    try:
+        with open(USERS_DB_FILE, 'w', encoding='utf-8') as f:
+            json.dump(users_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Ошибка сохранения users_data: {e}")
+
+def load_orders_history():
+    """Загрузка истории заказов из файла"""
+    try:
+        if os.path.exists(ORDERS_DB_FILE):
+            with open(ORDERS_DB_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Ошибка загрузки orders_history: {e}")
+    return {}
+
+def save_orders_history():
+    """Сохранение истории заказов в файл"""
+    try:
+        with open(ORDERS_DB_FILE, 'w', encoding='utf-8') as f:
+            json.dump(orders_history, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Ошибка сохранения orders_history: {e}")
+
+def add_order_to_history(user_data, date_str):
+    """Добавление заказа в историю"""
+    try:
+        if date_str not in orders_history:
+            orders_history[date_str] = []
+        
+        order_entry = {
+            'user_id': user_data.get('user_id'),
+            'location_name': user_data['location_name'],
+            'address': user_data['address'],
+            'orders': user_data['orders'].copy(),
+            'total_items': sum(user_data['orders'].values()),
+            'timestamp': datetime.now().strftime('%H:%M')
+        }
+        
+        orders_history[date_str].append(order_entry)
+        save_orders_history()
+    except Exception as e:
+        print(f"Ошибка добавления в историю: {e}")
+
+# Загрузка данных при запуске
+users_data = load_users_data()
+orders_history = load_orders_history()
+
+print(f"📊 Загружено пользователей: {len(users_data)}")
+print(f"📦 Загружено дней в истории: {len(orders_history)}")
 
 @app.route(BOT_URL, methods=['POST'])
 def webhook():
@@ -52,14 +117,18 @@ def index():
 
 def get_user_data(user_id):
     """Получить данные пользователя"""
-    if user_id not in users_data:
-        users_data[user_id] = {
+    user_id_str = str(user_id)
+    if user_id_str not in users_data:
+        users_data[user_id_str] = {
+            'user_id': user_id_str,
             'address': '',
             'location_name': '', 
             'orders': {},
-            'registered': False
+            'registered': False,
+            'registration_date': datetime.now().strftime('%d.%m.%Y %H:%M')
         }
-    return users_data[user_id]
+        save_users_data()  # Сохраняем нового пользователя
+    return users_data[user_id_str]
 
 @bot.message_handler(commands=['start'])
 def start(message: Message):
@@ -94,13 +163,17 @@ def admin_panel(message: Message):
     buttons = [
         InlineKeyboardButton('📊 Excel Сводка', callback_data='admin_excel'),
         InlineKeyboardButton('📋 Текстовая сводка', callback_data='admin_summary'),
-        InlineKeyboardButton('👥 Список клиентов', callback_data='admin_clients'),
+        InlineKeyboardButton('👥 База клиентов', callback_data='admin_clients'),
+        InlineKeyboardButton('📈 История заказов', callback_data='admin_history'),
         InlineKeyboardButton('🔄 Обнулить заказы', callback_data='admin_clear'),
+        InlineKeyboardButton('💾 Экспорт данных', callback_data='admin_export'),
     ]
-    markup.add(*buttons[:2])
-    markup.add(*buttons[2:])
+    markup.add(*buttons[:3])
+    markup.add(*buttons[3:])
     
-    bot.send_message(message.chat.id, "⚙️ **Панель администратора**", reply_markup=markup)
+    stats_text = f"📊 **Статистика:**\n👥 Клиентов: {len(users_data)}\n📦 Дней в истории: {len(orders_history)}"
+    
+    bot.send_message(message.chat.id, f"⚙️ **Панель администратора**\n\n{stats_text}", reply_markup=markup)
 
 @bot.message_handler(func=lambda message: True)
 def handle_messages(message: Message):
@@ -138,7 +211,10 @@ def handle_registration(message: Message):
     elif step == 'waiting_address':
         user_data['address'] = message.text.strip()
         user_data['registered'] = True
+        user_data['registration_date'] = datetime.now().strftime('%d.%m.%Y %H:%M')
         del registration_steps[user_id]
+        
+        save_users_data()  # Сохраняем данные после регистрации
         
         bot.send_message(
             message.chat.id,
@@ -185,9 +261,13 @@ def handle_callback(call):
     elif call.data == 'admin_summary':
         send_text_summary(call)
     elif call.data == 'admin_clients':
-        show_clients_list(call)
+        show_clients_database(call)
+    elif call.data == 'admin_history':
+        show_orders_history(call)
     elif call.data == 'admin_clear':
         clear_all_orders(call)
+    elif call.data == 'admin_export':
+        export_all_data(call)
     elif call.data in positions:
         current_orders[user_id] = {'position': call.data}
         bot.answer_callback_query(call.id, f"Выбрано: {call.data}")
@@ -235,6 +315,7 @@ def show_user_data(call, user_data):
     data_text = "👤 **Ваши данные:**\n\n"
     data_text += f"🏪 **Точка:** {user_data['location_name']}\n"
     data_text += f"📍 **Адрес:** {user_data['address']}\n"
+    data_text += f"📅 **Дата регистрации:** {user_data.get('registration_date', 'неизвестно')}\n"
     data_text += f"📦 **Заказов сегодня:** {total_items} шт.\n\n"
     data_text += "_Чтобы изменить данные, перезапустите бота /start_"
     
@@ -281,6 +362,8 @@ def handle_quantity(message: Message):
         else:
             user_data['orders'][position] = quantity
             action_text = f"{'✏️ Обновлено' if is_editing else '✅ Добавлено'} {quantity} шт. {position}"
+        
+        save_users_data()  # Сохраняем после изменения заказа
         
         bot.reply_to(message, f"{action_text} для {user_data['location_name']}!")
         del current_orders[user_id]
@@ -433,6 +516,14 @@ def send_excel_summary(call=None):
                 caption=f"📊 Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}\n\nФайл готов для открытия в Excel"
             )
         else:
+            # Сохраняем заказы в историю перед очисткой
+            current_date = datetime.now().strftime('%Y-%m-%d')
+            active_users = {uid: data for uid, data in users_data.items() if data.get('orders')}
+            
+            for user_data in active_users.values():
+                if user_data['orders']:
+                    add_order_to_history(user_data, current_date)
+            
             bot.send_document(
                 ADMIN_CHAT_ID,
                 document=excel_buffer,
@@ -487,8 +578,13 @@ def send_text_summary(call):
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, summary_text, parse_mode='Markdown')
 
-def show_clients_list(call):
-    """Показать список всех клиентов"""
+def show_clients_database(call):
+    """Показать базу клиентов"""
+    if not users_data:
+        bot.answer_callback_query(call.id, "База клиентов пуста")
+        bot.send_message(call.message.chat.id, "👥 База клиентов пуста.")
+        return
+    
     registered_users = [data for data in users_data.values() if data['registered']]
     
     if not registered_users:
@@ -496,25 +592,58 @@ def show_clients_list(call):
         bot.send_message(call.message.chat.id, "👥 Нет зарегистрированных клиентов.")
         return
     
-    clients_text = "👥 **ЗАРЕГИСТРИРОВАННЫЕ КЛИЕНТЫ**\n\n"
+    clients_text = f"👥 **БАЗА КЛИЕНТОВ**\n📊 Всего: {len(registered_users)}\n\n"
     
     for i, user_data in enumerate(registered_users, 1):
         order_count = sum(user_data['orders'].values())
-        status = "✅ Есть заказы" if order_count > 0 else "⏳ Нет заказов"
+        last_order = "✅ Сегодня" if order_count > 0 else "⏳ Нет заказов"
         clients_text += f"{i}. **{user_data['location_name']}**\n"
         clients_text += f"   📍 {user_data['address']}\n"
-        clients_text += f"   📦 {status} ({order_count} шт.)\n\n"
+        clients_text += f"   📅 Регистрация: {user_data.get('registration_date', 'неизвестно')}\n"
+        clients_text += f"   📦 {last_order} ({order_count} шт.)\n\n"
     
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, clients_text, parse_mode='Markdown')
 
+def show_orders_history(call):
+    """Показать историю заказов"""
+    if not orders_history:
+        bot.answer_callback_query(call.id, "История заказов пуста")
+        bot.send_message(call.message.chat.id, "📈 История заказов пуста.")
+        return
+    
+    history_text = f"📈 **ИСТОРИЯ ЗАКАЗОВ**\n📊 Дней в истории: {len(orders_history)}\n\n"
+    
+    # Показываем последние 7 дней
+    sorted_dates = sorted(orders_history.keys(), reverse=True)[:7]
+    
+    for date_str in sorted_dates:
+        date_orders = orders_history[date_str]
+        total_orders = len(date_orders)
+        total_items = sum(order['total_items'] for order in date_orders)
+        
+        history_text += f"📅 **{datetime.strptime(date_str, '%Y-%m-%d').strftime('%d.%m.%Y')}**\n"
+        history_text += f"   👥 Клиентов: {total_orders}\n"
+        history_text += f"   📦 Товаров: {total_items} шт.\n\n"
+    
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton('📊 Детальная статистика', callback_data='admin_stats'))
+    
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, history_text, parse_mode='Markdown', reply_markup=markup)
+
 def clear_all_orders(call):
     """Очистить все заказы"""
+    cleared_count = 0
     for user_data in users_data.values():
-        user_data['orders'] = {}
+        if user_data['orders']:
+            user_data['orders'] = {}
+            cleared_count += 1
     
-    bot.answer_callback_query(call.id, "Все заказы очищены")
-    bot.send_message(call.message.chat.id, "🗑️ Все заказы очищены!")
+    save_users_data()  # Сохраняем изменения
+    
+    bot.answer_callback_query(call.id, f"Очищено {cleared_count} заказов")
+    bot.send_message(call.message.chat.id, f"🗑️ Очищены заказы у {cleared_count} клиентов!")
 
 def clear_all_orders_auto():
     """Автоматическая очистка заказов (без уведомления)"""
@@ -524,7 +653,33 @@ def clear_all_orders_auto():
             user_data['orders'] = {}
             cleared_count += 1
     
+    if cleared_count > 0:
+        save_users_data()
+    
     print(f"Автоматически очищены заказы у {cleared_count} пользователей")
+
+def export_all_data(call):
+    """Экспорт всех данных в JSON"""
+    try:
+        # Создаем файл с полными данными
+        export_data = {
+            'users': users_data,
+            'orders_history': orders_history,
+            'export_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        export_json = json.dumps(export_data, ensure_ascii=False, indent=2)
+        filename = f"backup_data_{datetime.now().strftime('%Y%m%d_%H%M')}.json"
+        
+        bot.answer_callback_query(call.id)
+        bot.send_document(
+            call.message.chat.id,
+            document=(filename, io.BytesIO(export_json.encode('utf-8'))),
+            caption="💾 Полный бэкап данных системы"
+        )
+    except Exception as e:
+        bot.answer_callback_query(call.id, "Ошибка экспорта")
+        bot.send_message(call.message.chat.id, f"❌ Ошибка при экспорте данных: {e}")
 
 def check_scheduled_tasks():
     """Проверка запланированных задач"""
