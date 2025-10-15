@@ -530,7 +530,7 @@ def send_excel_summary(call=None):
             bot.send_document(
                 call.message.chat.id,
                 document=excel_buffer,
-                visible_file_name=filename,
+                filename=filename,
                 caption=f"📊 Сводка заказов от {datetime.now().strftime('%d.%m.%Y')}\n\nФайл готов для открытия в Excel"
             )
         else:
@@ -545,7 +545,7 @@ def send_excel_summary(call=None):
             bot.send_document(
                 ADMIN_CHAT_ID,
                 document=excel_buffer,
-                visible_file_name=filename,
+                filename=filename,
                 caption=f"📊 Автоматическая сводка заказов от {datetime.now().strftime('%d.%m.%Y')}"
             )
             
@@ -693,7 +693,7 @@ def export_all_data(call):
         bot.send_document(
             call.message.chat.id,
             document=io.BytesIO(export_json.encode('utf-8')),
-            file_name=filename,
+            filename=filename,
             caption="💾 Полный бэкап данных системы"
         )
     except Exception as e:
