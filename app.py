@@ -335,7 +335,7 @@ def show_user_data(call, user_data):
     data_text += f"📍 **Адрес:** {user_data['address']}\n"
     data_text += f"📅 **Дата регистрации:** {user_data.get('registration_date', 'неизвестно')}\n"
     data_text += f"📦 **Заказов сегодня:** {total_items} шт.\n\n"
-    data_text += "_Чтобы изменить данные, перезапустите бота /start_"
+    data_text += "_Чтобы изменить данные, перезапустите бота /start _"
     
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, data_text)
