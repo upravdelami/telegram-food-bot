@@ -760,7 +760,8 @@ def setup_webhook():
         app_name = os.environ.get('RAILWAY_PROJECT_NAME', 'your-app-name')
         railway_url = f"https://{app_name}.up.railway.app"
     webhook_url = f"{railway_url}{BOT_URL}"
-    bot.set_webhook(webhook_url)
+    status = bot.set_webhook(webhook_url)
+    print(f"Webhook set status: {status}")  # Добавь эту строку
 
 if __name__ == '__main__':
     setup_webhook()
