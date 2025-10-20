@@ -791,13 +791,38 @@ if __name__ == '__main__':
     setup_webhook()
     print("=== БОТ ГОТОВ ===")
     
-    # Запуск планировщика
-    print("🔄 Запускаю планировщик в отдельном потоке...")
-    scheduler_thread = threading.Thread(target=scheduler, daemon=True)
-    scheduler_thread.start()
-    print("✅ Планировщик запущен! Следи за логами...")
+    # ЗАПУСК ПЛАНИРОВЩИКА В ОСНОВНОМ ПОТОКЕ
+    print("ЗАПУСК ПЛАНИРОВЩИКА В ОСНОВНОМ ПОТОКЕ...")
     
-    # Сервер
-    port = int(os.environ.get('PORT', 8080))
-    print(f"🌐 Запускаю Flask на порту {port}")
-    app.run(host='0.0.0.0', port=port)
+    def run_scheduler():
+        print("ПЛАННИРОВЩИК РАБОТАЕТ...")
+        while True:
+            try:
+                check_scheduled_tasks()
+                time.sleep(10)
+            except Exception as e:
+                print(f"ОШИБКА В ПЛАНИРОВЩИКЕ: {e}")
+                time.sleep(10)
+    
+    # Запускаем планировщик в отдельном потоке (НО НЕ daemon!)
+    scheduler_thread = threading.Thread(target=run_scheduler)
+    scheduler_thread.daemon = False  # КРИТИЧНО: НЕ daemon
+    scheduler_thread.start()
+    print("ПЛАНИРОВЩИК ЗАПУЩЕН!")
+
+    # Flask в отдельном потоке
+    def run_flask():
+        port = int(os.environ.get('PORT', 8080))
+        print(f"FLASK НА ПОРТУ {port}")
+        app.run(host='0.0.0.0', port=port, use_reloader=False)
+
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+
+    # Держим основной поток живым
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("Бот остановлен")
