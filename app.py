@@ -1576,43 +1576,37 @@ def setup_webhook():
         print("Проверь: токен, URL, доступность /webhook")
      
 
-def main_prog():
-    setup_webhook()
-    print("=== БОТ ГОТОВ ===")
+# === ЗАПУСК ПЛАНИРОВЩИКА И WEBHOOK ПРИ ИМПОРТЕ ===
+def _start_bot():
+    print("=== ИНИЦИАЛИЗАЦИЯ БОТА ===")
     
-    # ЗАПУСК ПЛАНИРОВЩИКА В ОСНОВНОМ ПОТОКЕ
-    print("ЗАПУСК ПЛАНИРОВЩИКА В ОСНОВНОМ ПОТОКЕ...")
+    # Установка webhook
+    print("Удаляю старый webhook...")
+    bot.remove_webhook()
+    time.sleep(2)
     
+    webhook_url = "https://web-production-d7a9d.up.railway.app/webhook"
+    print(f"Устанавливаю webhook: {webhook_url}")
+    result = bot.set_webhook(url=webhook_url)
+    if result:
+        print("WEBHOOK УСПЕШНО УСТАНОВЛЕН!")
+    else:
+        print("ОШИБКА: Webhook НЕ установлен!")
+    
+    # Запуск планировщика в отдельном потоке
     def run_scheduler():
-        print("ПЛАННИРОВЩИК РАБОТАЕТ..!.")
+        print("ПЛАННИРОВЩИК ЗАПУЩЕН!")
         while True:
             try:
                 check_scheduled_tasks()
                 time.sleep(10)
             except Exception as e:
-                print(f"ОШИБКА В ПЛАНИРОВЩИКЕ: {e}")
+                print(f"ОШИБКА ПЛАНИРОВЩИКА: {e}")
                 time.sleep(10)
     
-    # Запускаем планировщик в отдельном потоке (НО НЕ daemon!)
-    scheduler_thread = threading.Thread(target=run_scheduler)
-    scheduler_thread.daemon = False  # КРИТИЧНО: НЕ daemon
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
     scheduler_thread.start()
     print("ПЛАНИРОВЩИК ЗАПУЩЕН!")
 
-    # Flask в отдельном потоке
-    def run_flask():
-        port = int(os.environ.get('PORT', 8080))
-        print(f"FLASK НА ПОРТУ {port}")
-        app.run(host='0.0.0.0', port=port, use_reloader=False)
-
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-
-    # Держим основной поток живым
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("Бот остановлен")
-main_prog()
+# Вызываем при импорте — безопасно для Gunicorn
+_start_bot()
