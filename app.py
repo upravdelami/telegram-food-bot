@@ -729,25 +729,25 @@ def check_scheduled_tasks():
     
     print(f"--- ПРОВЕРКА: {current_time} ---")
     
-    # Тест: сводка через 1 минуту, очистка через 2
-    test_send_minute = (now.minute + 1) % 60
-    test_clear_minute = (now.minute + 2) % 60
-    
-    print(f"Ожидаем: сводка в {test_send_minute:02d}, очистка в {test_clear_minute:02d}")
+    # ФИКСИРОВАННОЕ ВРЕМЯ ДЛЯ ТЕСТА
+    TEST_SEND_HOUR = 13
+    TEST_SEND_MINUTE = 55  # ← СРАБОТАЕТ В 13:55
+    TEST_CLEAR_HOUR = 13
+    TEST_CLEAR_MINUTE = 57  # ← Очистка в 13:57
 
-    # ТЕСТ: сводка — в течение всей минуты
-    if now.minute == test_send_minute:
-        print("*** ТРИГГЕР: ОТПРАВКА СВОДКИ ***")
+    # ТЕСТ: сводка в 13:55
+    if now.hour == TEST_SEND_HOUR and now.minute == TEST_SEND_MINUTE and now.second < 10:
+        print("*** ТРИГГЕР: ОТПРАВКА СВОДКИ В 13:55 ***")
         try:
             send_excel_summary()
             print("СВОДКА ОТПРАВЛЕНА!")
         except Exception as e:
             print(f"ОШИБКА СВОДКИ: {e}")
-        time.sleep(70)  # Чтобы не повторять
+        time.sleep(70)
 
-    # ТЕСТ: очистка — в течение следующей минуты
-    elif now.minute == test_clear_minute:
-        print("*** ТРИГГЕР: ОЧИСТКА ЗАКАЗОВ ***")
+    # ТЕСТ: очистка в 13:57
+    elif now.hour == TEST_CLEAR_HOUR and now.minute == TEST_CLEAR_MINUTE and now.second < 10:
+        print("*** ТРИГГЕР: ОЧИСТКА ЗАКАЗОВ В 13:57 ***")
         try:
             cleared_count = clear_all_orders_auto()
             bot.send_message(ADMIN_CHAT_ID, f"ТЕСТ: Заказы обнулены. Очищено: {cleared_count}")
@@ -757,7 +757,7 @@ def check_scheduled_tasks():
         time.sleep(70)
 
     else:
-        print(f"Ждём... сейчас {now.minute}, нужно {test_send_minute} или {test_clear_minute}")
+        print(f"Ждём... сейчас {now.hour}:{now.minute:02d}, нужно 13:55 или 13:57")
 
 def scheduler():
     print("🚀 ПЛАННИРОВЩИК ЗАПУЩЕН! Проверяем каждую секунду...")
