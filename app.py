@@ -727,30 +727,42 @@ target_send_minute = None
 target_clear_minute = None
 last_triggered_minute = None
 
-def check_scheduled_tasks():
-    global target_send_minute, target_clear_minute, last_triggered_minute
+STATE_FILE = "scheduler_state.json"
 
+def load_state():
+    if os.path.exists(STATE_FILE):
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {"target_send_minute": None, "target_clear_minute": None, "last_triggered_minute": None}
+
+def save_state(state):
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f)
+
+def check_scheduled_tasks():
+    state = load_state()
     msk_tz = timezone(timedelta(hours=3))
     now = datetime.now(msk_tz)
     current_time = now.strftime('%H:%M:%S')
 
     print(f"--- ПРОВЕРКА: {current_time} ---")
 
-    # инициализация ТОЛЬКО при первом запуске
-    if target_send_minute is None and target_clear_minute is None:
-        target_send_minute = (now.minute + 1) % 60
-        target_clear_minute = (now.minute + 2) % 60
-        print(f"🎯 Первичная установка: сводка в {target_send_minute}, очистка в {target_clear_minute}")
+    # первый запуск
+    if state["target_send_minute"] is None and state["target_clear_minute"] is None:
+        state["target_send_minute"] = (now.minute + 1) % 60
+        state["target_clear_minute"] = (now.minute + 2) % 60
+        save_state(state)
+        print(f"🎯 Первичная установка: сводка в {state['target_send_minute']}, очистка в {state['target_clear_minute']}")
 
-    print(f"Ожидаем: сводка в {target_send_minute:02d}, очистка в {target_clear_minute:02d}")
+    print(f"Ожидаем: сводка в {state['target_send_minute']:02d}, очистка в {state['target_clear_minute']:02d}")
 
     # не повторяем в ту же минуту
-    if last_triggered_minute == now.minute:
+    if state["last_triggered_minute"] == now.minute:
         print("⏸ Уже выполнялось в эту минуту, ждём следующую...")
         return
 
     # === ОТПРАВКА СВОДКИ ===
-    if now.minute == target_send_minute:
+    if now.minute == state["target_send_minute"]:
         print("*** ТРИГГЕР: ОТПРАВКА СВОДКИ ***")
         try:
             send_excel_summary()
@@ -758,12 +770,12 @@ def check_scheduled_tasks():
         except Exception as e:
             print(f"❌ Ошибка сводки: {e}")
         finally:
-            last_triggered_minute = now.minute
-            # сдвигаем на час вперёд
-            target_send_minute = (target_send_minute + 60) % 60
+            state["last_triggered_minute"] = now.minute
+            state["target_send_minute"] = (state["target_send_minute"] + 60) % 60
+            save_state(state)
 
     # === ОЧИСТКА ЗАКАЗОВ ===
-    elif now.minute == target_clear_minute:
+    elif now.minute == state["target_clear_minute"]:
         print("*** ТРИГГЕР: ОЧИСТКА ЗАКАЗОВ ***")
         try:
             cleared_count = clear_all_orders_auto()
@@ -772,11 +784,12 @@ def check_scheduled_tasks():
         except Exception as e:
             print(f"❌ Ошибка очистки: {e}")
         finally:
-            last_triggered_minute = now.minute
-            target_clear_minute = (target_clear_minute + 60) % 60
-
+            state["last_triggered_minute"] = now.minute
+            state["target_clear_minute"] = (state["target_clear_minute"] + 60) % 60
+            save_state(state)
     else:
-        print(f"Ждём... сейчас {now.minute}, нужно {target_send_minute} или {target_clear_minute}")
+        print(f"Ждём... сейчас {now.minute}, нужно {state['target_send_minute']} или {state['target_clear_minute']}")
+
 
 
 def scheduler():
