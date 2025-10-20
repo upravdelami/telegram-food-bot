@@ -105,16 +105,19 @@ print(f"Загружено дней в истории: {len(orders_history)}")
 
 @app.route(BOT_URL, methods=['POST'])
 def webhook():
+    print(f"ПОЛУЧЕН POST на {BOT_URL}")
     try:
         if request.headers.get('content-type') == 'application/json':
             json_string = request.get_data().decode('utf-8')
             update = telebot.types.Update.de_json(json_string)
+            print(f"ОБНОВЛЕНИЕ: {update}")  # ← ВИДИМ, ЧТО ПРИШЛО
             bot.process_new_updates([update])
-            return ''
+            return '', 200
         else:
+            print("ОТКЛОНЁН: не JSON")
             abort(403)
     except Exception as e:
-        print(f"Ошибка в webhook: {e}")
+        print(f"ОШИБКА В WEBHOOK: {e}")
         return 'Error', 500
 
 @app.route('/')
@@ -753,15 +756,21 @@ def scheduler():
             time.sleep(60)
 
 def setup_webhook():
+    print("Удаляю старый webhook...")
     bot.remove_webhook()
-    time.sleep(1)
-    railway_url = os.environ.get('RAILWAY_STATIC_URL')
-    if not railway_url:
-        app_name = os.environ.get('RAILWAY_PROJECT_NAME', 'your-app-name')
-        railway_url = f"https://{app_name}.up.railway.app"
-    webhook_url = f"{railway_url}{BOT_URL}"
-    status = bot.set_webhook(webhook_url)
-    print(f"Webhook set status: {status}")  # Добавь эту строку
+    time.sleep(2)
+
+    # Полный URL
+    webhook_url = "https://web-production-d7a9d.up.railway.app/webhook"
+    print(f"Устанавливаю webhook: {webhook_url}")
+
+    result = bot.set_webhook(url=webhook_url)
+    if result:
+        print("WEBHOOK УСПЕШНО УСТАНОВЛЕН!")
+    else:
+        print("ОШИБКА: Webhook НЕ установлен!")
+        print("Проверь: токен, URL, доступность /webhook")
+     
 
 if __name__ == '__main__':
     setup_webhook()
