@@ -790,11 +790,15 @@ def setup_webhook():
 
 if __name__ == '__main__':
     setup_webhook()
-    print("Бот запущен")
+    print("=== БОТ ГОТОВ ===")
     
+    # Запуск планировщика
+    print("🔄 Запускаю планировщик в отдельном потоке...")
     scheduler_thread = threading.Thread(target=scheduler, daemon=True)
     scheduler_thread.start()
-    print("Планировщик задач запущен")
+    print("✅ Планировщик запущен! Следи за логами...")
     
-    port = int(os.environ.get('PORT', 8000))
+    # Сервер
+    port = int(os.environ.get('PORT', 8080))
+    print(f"🌐 Запускаю Flask на порту {port}")
     app.run(host='0.0.0.0', port=port)
