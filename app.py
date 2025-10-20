@@ -722,32 +722,37 @@ def export_all_data(call):
         bot.answer_callback_query(call.id, "Ошибка экспорта")
         bot.send_message(call.message.chat.id, f"Ошибка при экспорте данных: {e}")
 
+# Глобальные переменные для теста (устанавливаются один раз)
+TEST_SEND_MINUTE = None
+TEST_CLEAR_MINUTE = None
+
 def check_scheduled_tasks():
+    global TEST_SEND_MINUTE, TEST_CLEAR_MINUTE
     msk_tz = timezone(timedelta(hours=3))
     now = datetime.now(msk_tz)
     current_time = now.strftime('%H:%M:%S')
     
     print(f"--- ПРОВЕРКА: {current_time} ---")
     
-    # ФИКСИРОВАННОЕ ВРЕМЯ ДЛЯ ТЕСТА
-    TEST_SEND_HOUR = 15
-    TEST_SEND_MINUTE = 56  # ← СРАБОТАЕТ В 13:55
-    TEST_CLEAR_HOUR = 15
-    TEST_CLEAR_MINUTE = 58  # ← Очистка в 13:57
+    # УСТАНАВЛИВАЕМ ВРЕМЯ ТОЛЬКО ПРИ ПЕРВОМ ЗАПУСКЕ
+    if TEST_SEND_MINUTE is None:
+        TEST_SEND_MINUTE = (now.minute + 1) % 60
+        TEST_CLEAR_MINUTE = (now.minute + 2) % 60
+        print(f"ТЕСТ: сводка в {TEST_SEND_MINUTE:02d}, очистка в {TEST_CLEAR_MINUTE:02d}")
 
-    # ТЕСТ: сводка в 13:55
-    if now.hour == TEST_SEND_HOUR and now.minute == TEST_SEND_MINUTE and now.second < 10:
-        print("*** ТРИГГЕР: ОТПРАВКА СВОДКИ В 13:55 ***")
+    # ТЕСТ: сводка в фиксированную минуту
+    if now.minute == TEST_SEND_MINUTE and now.second < 10:
+        print("*** ТРИГГЕР: ОТПРАВКА СВОДКИ ***")
         try:
             send_excel_summary()
             print("СВОДКА ОТПРАВЛЕНА!")
         except Exception as e:
             print(f"ОШИБКА СВОДКИ: {e}")
-        time.sleep(70)
+        time.sleep(70)  # Чтобы не повторять
 
-    # ТЕСТ: очистка в 13:57
-    elif now.hour == TEST_CLEAR_HOUR and now.minute == TEST_CLEAR_MINUTE and now.second < 10:
-        print("*** ТРИГГЕР: ОЧИСТКА ЗАКАЗОВ В 13:57 ***")
+    # ТЕСТ: очистка в следующую минуту
+    elif now.minute == TEST_CLEAR_MINUTE and now.second < 10:
+        print("*** ТРИГГЕР: ОЧИСТКА ЗАКАЗОВ ***")
         try:
             cleared_count = clear_all_orders_auto()
             bot.send_message(ADMIN_CHAT_ID, f"ТЕСТ: Заказы обнулены. Очищено: {cleared_count}")
@@ -757,7 +762,7 @@ def check_scheduled_tasks():
         time.sleep(70)
 
     else:
-        print(f"Ждём... сейчас {now.hour}:{now.minute:02d}, нужно 13:55 или 13:57")
+        print(f"Ждём... сейчас {now.minute:02d}, нужно {TEST_SEND_MINUTE:02d} или {TEST_CLEAR_MINUTE:02d}")
 
 def scheduler():
     print("🚀 ПЛАННИРОВЩИК ЗАПУЩЕН! Проверяем каждую секунду...")
