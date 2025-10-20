@@ -1584,7 +1584,7 @@ if __name__ == '__main__':
     print("ЗАПУСК ПЛАНИРОВЩИКА В ОСНОВНОМ ПОТОКЕ...")
     
     def run_scheduler():
-        print("ПЛАННИРОВЩИК РАБОТАЕТ...")
+        print("ПЛАННИРОВЩИК РАБОТАЕТ..!.")
         while True:
             try:
                 check_scheduled_tasks()
