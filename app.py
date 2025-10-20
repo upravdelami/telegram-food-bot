@@ -722,7 +722,7 @@ def export_all_data(call):
         bot.answer_callback_query(call.id, "Ошибка экспорта")
         bot.send_message(call.message.chat.id, f"Ошибка при экспорте данных: {e}")
 
-# глобальные параметры планировщика
+# глобальные параметры
 target_send_minute = None
 target_clear_minute = None
 last_triggered_minute = None
@@ -736,14 +736,15 @@ def check_scheduled_tasks():
 
     print(f"--- ПРОВЕРКА: {current_time} ---")
 
-    # инициализация только один раз
-    if target_send_minute is None or target_clear_minute is None:
+    # инициализация ТОЛЬКО при первом запуске
+    if target_send_minute is None and target_clear_minute is None:
         target_send_minute = (now.minute + 1) % 60
         target_clear_minute = (now.minute + 2) % 60
+        print(f"🎯 Первичная установка: сводка в {target_send_minute}, очистка в {target_clear_minute}")
 
     print(f"Ожидаем: сводка в {target_send_minute:02d}, очистка в {target_clear_minute:02d}")
 
-    # защита от повторного выполнения
+    # не повторяем в ту же минуту
     if last_triggered_minute == now.minute:
         print("⏸ Уже выполнялось в эту минуту, ждём следующую...")
         return
@@ -758,7 +759,8 @@ def check_scheduled_tasks():
             print(f"❌ Ошибка сводки: {e}")
         finally:
             last_triggered_minute = now.minute
-            target_send_minute = (now.minute + 60) % 60  # через 1 час
+            # сдвигаем на час вперёд
+            target_send_minute = (target_send_minute + 60) % 60
 
     # === ОЧИСТКА ЗАКАЗОВ ===
     elif now.minute == target_clear_minute:
@@ -771,7 +773,7 @@ def check_scheduled_tasks():
             print(f"❌ Ошибка очистки: {e}")
         finally:
             last_triggered_minute = now.minute
-            target_clear_minute = (now.minute + 60) % 60  # через 1 час
+            target_clear_minute = (target_clear_minute + 60) % 60
 
     else:
         print(f"Ждём... сейчас {now.minute}, нужно {target_send_minute} или {target_clear_minute}")
