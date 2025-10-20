@@ -722,63 +722,60 @@ def export_all_data(call):
         bot.answer_callback_query(call.id, "Ошибка экспорта")
         bot.send_message(call.message.chat.id, f"Ошибка при экспорте данных: {e}")
 
-# Глобальные переменные для теста (устанавливаются один раз)
-TEST_SEND_MINUTE = None
-TEST_CLEAR_MINUTE = None
-
-import time
-from datetime import datetime, timedelta, timezone
+# глобальные параметры планировщика
+target_send_minute = None
+target_clear_minute = None
+last_triggered_minute = None
 
 def check_scheduled_tasks():
+    global target_send_minute, target_clear_minute, last_triggered_minute
+
     msk_tz = timezone(timedelta(hours=3))
-
-    # Фиксируем начальные минуты при первом вызове
-    if not hasattr(check_scheduled_tasks, 'target_send_minute'):
-        now = datetime.now(msk_tz)
-        check_scheduled_tasks.target_send_minute = (now.minute + 1) % 60
-        check_scheduled_tasks.target_clear_minute = (now.minute + 2) % 60
-        check_scheduled_tasks.last_triggered_minute = None
-
     now = datetime.now(msk_tz)
     current_time = now.strftime('%H:%M:%S')
 
     print(f"--- ПРОВЕРКА: {current_time} ---")
-    print(f"Ожидаем сводку в {check_scheduled_tasks.target_send_minute:02d}, "
-          f"очистку в {check_scheduled_tasks.target_clear_minute:02d}")
 
-    # предотвращаем повторное срабатывание в ту же минуту
-    if check_scheduled_tasks.last_triggered_minute == now.minute:
+    # инициализация только один раз
+    if target_send_minute is None or target_clear_minute is None:
+        target_send_minute = (now.minute + 1) % 60
+        target_clear_minute = (now.minute + 2) % 60
+
+    print(f"Ожидаем: сводка в {target_send_minute:02d}, очистка в {target_clear_minute:02d}")
+
+    # защита от повторного выполнения
+    if last_triggered_minute == now.minute:
         print("⏸ Уже выполнялось в эту минуту, ждём следующую...")
         return
 
-    # Проверяем, нужно ли выполнить задачу
-    if now.minute == check_scheduled_tasks.target_send_minute:
+    # === ОТПРАВКА СВОДКИ ===
+    if now.minute == target_send_minute:
         print("*** ТРИГГЕР: ОТПРАВКА СВОДКИ ***")
         try:
             send_excel_summary()
-            print("СВОДКА ОТПРАВЛЕНА!")
+            print("✅ Сводка отправлена!")
         except Exception as e:
-            print(f"ОШИБКА СВОДКИ: {e}")
+            print(f"❌ Ошибка сводки: {e}")
         finally:
-            check_scheduled_tasks.last_triggered_minute = now.minute
-            # Запланировать следующий цикл через 60 минут
-            check_scheduled_tasks.target_send_minute = (now.minute + 60) % 60
+            last_triggered_minute = now.minute
+            target_send_minute = (now.minute + 60) % 60  # через 1 час
 
-    elif now.minute == check_scheduled_tasks.target_clear_minute:
+    # === ОЧИСТКА ЗАКАЗОВ ===
+    elif now.minute == target_clear_minute:
         print("*** ТРИГГЕР: ОЧИСТКА ЗАКАЗОВ ***")
         try:
             cleared_count = clear_all_orders_auto()
             bot.send_message(ADMIN_CHAT_ID, f"✅ Заказы обнулены. Очищено: {cleared_count}")
-            print(f"ОЧИЩЕНО: {cleared_count}")
+            print(f"Очищено: {cleared_count}")
         except Exception as e:
-            print(f"ОШИБКА ОЧИСТКИ: {e}")
+            print(f"❌ Ошибка очистки: {e}")
         finally:
-            check_scheduled_tasks.last_triggered_minute = now.minute
-            # Запланировать следующую очистку через 60 минут
-            check_scheduled_tasks.target_clear_minute = (now.minute + 60) % 60
+            last_triggered_minute = now.minute
+            target_clear_minute = (now.minute + 60) % 60  # через 1 час
+
     else:
-        print(f"Ждём... сейчас {now.minute}, "
-              f"нужно {check_scheduled_tasks.target_send_minute} или {check_scheduled_tasks.target_clear_minute}")
+        print(f"Ждём... сейчас {now.minute}, нужно {target_send_minute} или {target_clear_minute}")
+
 
 def scheduler():
     print("🚀 ПЛАННИРОВЩИК ЗАПУЩЕН! Проверяем каждую секунду...")
