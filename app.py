@@ -726,23 +726,27 @@ def check_scheduled_tasks():
     msk_tz = timezone(timedelta(hours=3))
     now = datetime.now(msk_tz)
     
-    if now.hour == 20 and now.minute == 0:
-        print("Время отправки сводки 20:00")
+    # ТЕСТОВЫЙ РЕЖИМ: отправка через 1 минуту после запуска
+    test_time_send = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    test_time_clear = now.replace(second=0, microsecond=0) + timedelta(minutes=2)
+
+    if now.hour == test_time_send.hour and now.minute == test_time_send.minute:
+        print(f"ТЕСТ: Отправка сводки в {now.strftime('%H:%M')}")
         try:
             send_excel_summary()
-            print("Сводка отправлена")
+            print("Сводка отправлена (тест)")
         except Exception as e:
             print(f"Ошибка отправки сводки: {e}")
-    
-    elif now.hour == 23 and now.minute == 0:
-        print("Время очистки данных 23:00")
+
+    elif now.hour == test_time_clear.hour and now.minute == test_time_clear.minute:
+        print(f"ТЕСТ: Очистка заказов в {now.strftime('%H:%M')}")
         try:
             cleared_count = clear_all_orders_auto()
-            bot.send_message(ADMIN_CHAT_ID, f"Данные о заказах обнулены, начат новый день. Очищено заказов: {cleared_count}")
-            print("Данные очищены")
+            bot.send_message(ADMIN_CHAT_ID, f"ТЕСТ: Заказы обнулены. Очищено: {cleared_count}")
+            print("Заказы очищены (тест)")
         except Exception as e:
-            print(f"Ошибка очистки данных: {e}")
-            bot.send_message(ADMIN_CHAT_ID, f"Ошибка при обнулении данных: {e}")
+            print(f"Ошибка очистки: {e}")
+            bot.send_message(ADMIN_CHAT_ID, f"Ошибка при обнулении: {e}")
 
 def scheduler():
     print("Планировщик запущен")
