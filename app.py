@@ -730,10 +730,10 @@ def check_scheduled_tasks():
     print(f"--- ПРОВЕРКА: {current_time} ---")
     
     # ФИКСИРОВАННОЕ ВРЕМЯ ДЛЯ ТЕСТА
-    TEST_SEND_HOUR = 14
-    TEST_SEND_MINUTE = 55  # ← СРАБОТАЕТ В 13:55
-    TEST_CLEAR_HOUR = 14
-    TEST_CLEAR_MINUTE = 57  # ← Очистка в 13:57
+    TEST_SEND_HOUR = 15
+    TEST_SEND_MINUTE = 56  # ← СРАБОТАЕТ В 13:55
+    TEST_CLEAR_HOUR = 15
+    TEST_CLEAR_MINUTE = 58  # ← Очистка в 13:57
 
     # ТЕСТ: сводка в 13:55
     if now.hour == TEST_SEND_HOUR and now.minute == TEST_SEND_MINUTE and now.second < 10:
