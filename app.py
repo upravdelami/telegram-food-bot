@@ -727,42 +727,47 @@ TEST_SEND_MINUTE = None
 TEST_CLEAR_MINUTE = None
 
 def check_scheduled_tasks():
-    global TEST_SEND_MINUTE, TEST_CLEAR_MINUTE
     msk_tz = timezone(timedelta(hours=3))
     now = datetime.now(msk_tz)
     current_time = now.strftime('%H:%M:%S')
     
     print(f"--- ПРОВЕРКА: {current_time} ---")
     
-    # УСТАНАВЛИВАЕМ ВРЕМЯ ТОЛЬКО ПРИ ПЕРВОМ ЗАПУСКЕ
-    if TEST_SEND_MINUTE is None:
-        TEST_SEND_MINUTE = (now.minute + 1) % 60
-        TEST_CLEAR_MINUTE = (now.minute + 2) % 60
-        print(f"ТЕСТ: сводка в {TEST_SEND_MINUTE:02d}, очистка в {TEST_CLEAR_MINUTE:02d}")
+    # ФИКСИРУЕМ целевые минуты при первом запуске
+    if not hasattr(check_scheduled_tasks, 'target_send_minute'):
+        check_scheduled_tasks.target_send_minute = (now.minute + 1) % 60
+        check_scheduled_tasks.target_clear_minute = (now.minute + 2) % 60
+    
+    print(f"Ожидаем: сводка в {check_scheduled_tasks.target_send_minute:02d}, "
+          f"очистка в {check_scheduled_tasks.target_clear_minute:02d}")
 
-    # ТЕСТ: сводка в фиксированную минуту
-    if now.minute == TEST_SEND_MINUTE and now.second < 10:
+    # ТЕСТ: сводка — в течение всей минуты
+    if now.minute == check_scheduled_tasks.target_send_minute:
         print("*** ТРИГГЕР: ОТПРАВКА СВОДКИ ***")
         try:
             send_excel_summary()
             print("СВОДКА ОТПРАВЛЕНА!")
+            # Сбрасываем целевые минуты после выполнения
+            check_scheduled_tasks.target_send_minute = None
+            time.sleep(70)
         except Exception as e:
             print(f"ОШИБКА СВОДКИ: {e}")
-        time.sleep(70)  # Чтобы не повторять
 
-    # ТЕСТ: очистка в следующую минуту
-    elif now.minute == TEST_CLEAR_MINUTE and now.second < 10:
+    # ТЕСТ: очистка — в течение следующей минуты
+    elif now.minute == check_scheduled_tasks.target_clear_minute:
         print("*** ТРИГГЕР: ОЧИСТКА ЗАКАЗОВ ***")
         try:
             cleared_count = clear_all_orders_auto()
             bot.send_message(ADMIN_CHAT_ID, f"ТЕСТ: Заказы обнулены. Очищено: {cleared_count}")
             print(f"ОЧИЩЕНО: {cleared_count}")
+            # Сбрасываем целевые минуты после выполнения
+            check_scheduled_tasks.target_clear_minute = None
+            time.sleep(70)
         except Exception as e:
             print(f"ОШИБКА ОЧИСТКИ: {e}")
-        time.sleep(70)
 
     else:
-        print(f"Ждём... сейчас {now.minute:02d}, нужно {TEST_SEND_MINUTE:02d} или {TEST_CLEAR_MINUTE:02d}")
+        print(f"Ждём... сейчас {now.minute}, нужно {check_scheduled_tasks.target_send_minute} или {check_scheduled_tasks.target_clear_minute}")
 
 def scheduler():
     print("🚀 ПЛАННИРОВЩИК ЗАПУЩЕН! Проверяем каждую секунду...")
