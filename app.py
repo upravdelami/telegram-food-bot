@@ -723,28 +723,40 @@ def export_all_data(call):
         bot.send_message(call.message.chat.id, f"Ошибка при экспорте данных: {e}")
 
 def check_scheduled_tasks():
-    from datetime import timezone  # ← Добавь импорт здесь, если нужно
     msk_tz = timezone(timedelta(hours=3))
     now = datetime.now(msk_tz)
     current_time = now.strftime('%H:%M:%S')
     
-    print(f"--- ПРОВЕРКА ЗАДАЧ: Текущее время MSK: {current_time} ---")
+    print(f"--- ПРОВЕРКА: {current_time} ---")
     
-    # ТЕСТОВЫЙ РЕЖИМ: отправка через 1 минуту, очистка через 2 минуты
-    test_minute = now.minute
-    test_send_minute = test_minute + 1
-    test_clear_minute = test_minute + 2
+    test_send_minute = (now.minute + 1) % 60
+    test_clear_minute = (now.minute + 2) % 60
     
-    print(f"ТЕСТ: Ожидаем отправку в минуту {test_send_minute}, очистку в {test_clear_minute}")
-    
-    # Отправка сводки
-    if now.minute == test_send_minute and now.second == 0:
-        print("*** ТРИГГЕР: Отправка сводки сработала! ***")
+    print(f"Ожидаем: сводка в {test_send_minute:02d}, очистка в {test_clear_minute:02d}")
+
+    # ТЕСТ: сводка в течение минуты
+    if now.minute == test_send_minute:
+        print("*** ТРИГГЕР: СВОДКА ОТПРАВЛЯЕТСЯ ***")
         try:
             send_excel_summary()
-            print("✅ Сводка отправлена успешно")
+            print("СВОДКА ОТПРАВЛЕНА!")
         except Exception as e:
-            print(f"❌ Ошибка отправки сводки: {e}")
+            print(f"ОШИБКА СВОДКИ: {e}")
+        time.sleep(70)  # Не спамим
+
+    # ТЕСТ: очистка в течение минуты
+    elif now.minute == test_clear_minute:
+        print("*** ТРИГГЕР: ОЧИСТКА ЗАКАЗОВ ***")
+        try:
+            cleared_count = clear_all_orders_auto()
+            bot.send_message(ADMIN_CHAT_ID, f"ТЕСТ: Заказы обнулены. Очищено: {cleared_count}")
+            print(f"ОЧИЩЕНО: {cleared_count}")
+        except Exception as e:
+            print(f"ОШИБКА ОЧИСТКИ: {e}")
+        time.sleep(70)
+
+    else:
+        print(f"Ждём... сейчас {now.minute}, нужно {test_send_minute} или {test_clear_minute}")
     
     # Очистка заказов
     elif now.minute == test_clear_minute and now.second == 0:
