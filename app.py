@@ -1576,7 +1576,7 @@ def setup_webhook():
         print("Проверь: токен, URL, доступность /webhook")
      
 
-if __name__ == '__main__':
+def main_prog():
     setup_webhook()
     print("=== БОТ ГОТОВ ===")
     
@@ -1615,3 +1615,4 @@ if __name__ == '__main__':
             time.sleep(1)
     except KeyboardInterrupt:
         print("Бот остановлен")
+main_prog()
