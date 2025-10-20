@@ -723,41 +723,53 @@ def export_all_data(call):
         bot.send_message(call.message.chat.id, f"Ошибка при экспорте данных: {e}")
 
 def check_scheduled_tasks():
+    from datetime import timezone  # ← Добавь импорт здесь, если нужно
     msk_tz = timezone(timedelta(hours=3))
     now = datetime.now(msk_tz)
+    current_time = now.strftime('%H:%M:%S')
     
-    # ТЕСТОВЫЙ РЕЖИМ: отправка через 1 минуту после запуска
-    test_time_send = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
-    test_time_clear = now.replace(second=0, microsecond=0) + timedelta(minutes=2)
-
-    if now.hour == test_time_send.hour and now.minute == test_time_send.minute:
-        print(f"ТЕСТ: Отправка сводки в {now.strftime('%H:%M')}")
+    print(f"--- ПРОВЕРКА ЗАДАЧ: Текущее время MSK: {current_time} ---")
+    
+    # ТЕСТОВЫЙ РЕЖИМ: отправка через 1 минуту, очистка через 2 минуты
+    test_minute = now.minute
+    test_send_minute = test_minute + 1
+    test_clear_minute = test_minute + 2
+    
+    print(f"ТЕСТ: Ожидаем отправку в минуту {test_send_minute}, очистку в {test_clear_minute}")
+    
+    # Отправка сводки
+    if now.minute == test_send_minute and now.second == 0:
+        print("*** ТРИГГЕР: Отправка сводки сработала! ***")
         try:
             send_excel_summary()
-            print("Сводка отправлена (тест)")
+            print("✅ Сводка отправлена успешно")
         except Exception as e:
-            print(f"Ошибка отправки сводки: {e}")
-
-    elif now.hour == test_time_clear.hour and now.minute == test_time_clear.minute:
-        print(f"ТЕСТ: Очистка заказов в {now.strftime('%H:%M')}")
+            print(f"❌ Ошибка отправки сводки: {e}")
+    
+    # Очистка заказов
+    elif now.minute == test_clear_minute and now.second == 0:
+        print("*** ТРИГГЕР: Очистка заказов сработала! ***")
         try:
             cleared_count = clear_all_orders_auto()
-            bot.send_message(ADMIN_CHAT_ID, f"ТЕСТ: Заказы обнулены. Очищено: {cleared_count}")
-            print("Заказы очищены (тест)")
+            bot.send_message(ADMIN_CHAT_ID, f"🧪 ТЕСТ: Заказы обнулены. Очищено: {cleared_count} заказов")
+            print(f"✅ Заказы очищены: {cleared_count}")
         except Exception as e:
-            print(f"Ошибка очистки: {e}")
-            bot.send_message(ADMIN_CHAT_ID, f"Ошибка при обнулении: {e}")
+            print(f"❌ Ошибка очистки: {e}")
+            bot.send_message(ADMIN_CHAT_ID, f"🧪 ТЕСТ: Ошибка обнуления: {e}")
+    
+    else:
+        print(f"Ничего не запланировано. Текущее время: {now.minute}:{now.second}")
 
 def scheduler():
-    print("Планировщик запущен")
+    print("🚀 ПЛАННИРОВЩИК ЗАПУЩЕН! Проверяем каждую секунду...")
     
     while True:
         try:
             check_scheduled_tasks()
-            time.sleep(60)
+            time.sleep(10)  # ← Уменьшил до 10 сек для быстрой отладки
         except Exception as e:
-            print(f"Ошибка в планировщике: {e}")
-            time.sleep(60)
+            print(f"❌ КРИТИЧЕСКАЯ ОШИБКА ПЛАННИРОВЩИКА: {e}")
+            time.sleep(10)
 
 def setup_webhook():
     print("Удаляю старый webhook...")
