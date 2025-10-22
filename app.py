@@ -297,6 +297,13 @@ def handle_callback(call):
         show_delete_clients_menu(call)
     elif call.data == 'admin_history':
         show_orders_history(call)
+    elif call.data == 'admin_stats':
+        show_detailed_statistics(call)
+    elif call.data == 'admin_history_dates':
+        show_history_by_dates(call)
+    elif call.data.startswith('history_date_'):
+        date_str = call.data.replace('history_date_', '')
+        show_history_for_date(call, date_str)
     elif call.data == 'admin_clear':
         clear_all_orders(call)
     elif call.data == 'admin_export':
@@ -322,9 +329,6 @@ def handle_callback(call):
         show_main_menu(chat_id, user_data)
     elif call.data.startswith('delete_user_'):
         delete_user(call)
-    elif call.data == 'admin_stats':
-        bot.answer_callback_query(call.id, "Детальная статистика")
-        bot.send_message(chat_id, "Детальная статистика (в разработке)")
     elif call.data == 'back_to_admin':
         bot.answer_callback_query(call.id)
         bot.delete_message(chat_id, call.message.message_id)
@@ -678,11 +682,168 @@ def show_orders_history(call):
         history_text += f"   Клиентов: {total_orders}\n"
         history_text += f"   Товаров: {total_items} шт.\n\n"
     
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton('Детальная статистика', callback_data='admin_stats'))
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton('📊 Детальная статистика', callback_data='admin_stats'),
+        InlineKeyboardButton('📅 Выбрать дату', callback_data='admin_history_dates')
+    )
     
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, history_text, reply_markup=markup)
+
+def show_detailed_statistics(call):
+    """Детальная статистика по всей истории"""
+    if not orders_history:
+        bot.answer_callback_query(call.id, "Нет данных")
+        bot.send_message(call.message.chat.id, "Нет данных для статистики.")
+        return
+    
+    # Общая статистика
+    total_days = len(orders_history)
+    total_clients_all = 0
+    total_items_all = 0
+    position_stats = {pos: 0 for pos in positions.keys()}
+    client_frequency = {}
+    
+    for date_str, date_orders in orders_history.items():
+        total_clients_all += len(date_orders)
+        
+        for order in date_orders:
+            total_items_all += order['total_items']
+            location_name = order['location_name']
+            
+            # Частота заказов по клиентам
+            if location_name not in client_frequency:
+                client_frequency[location_name] = 0
+            client_frequency[location_name] += 1
+            
+            # Статистика по позициям
+            for pos, qty in order['orders'].items():
+                if pos in position_stats:
+                    position_stats[pos] += qty
+    
+    # Формируем отчёт
+    stats_text = "**📊 ДЕТАЛЬНАЯ СТАТИСТИКА**\n\n"
+    stats_text += "**Общие показатели:**\n"
+    stats_text += f"• Дней в истории: {total_days}\n"
+    stats_text += f"• Всего заказов: {total_clients_all}\n"
+    stats_text += f"• Всего товаров: {total_items_all} шт.\n"
+    stats_text += f"• Среднее товаров в день: {total_items_all // total_days if total_days > 0 else 0} шт.\n\n"
+    
+    # ТОП-5 популярных позиций
+    sorted_positions = sorted(position_stats.items(), key=lambda x: x[1], reverse=True)
+    stats_text += "**🔥 ТОП-5 популярных позиций:**\n"
+    for i, (pos, qty) in enumerate(sorted_positions[:5], 1):
+        if qty > 0:
+            stats_text += f"{i}. {pos}: {qty} шт.\n"
+    stats_text += "\n"
+    
+    # ТОП-5 активных клиентов
+    sorted_clients = sorted(client_frequency.items(), key=lambda x: x[1], reverse=True)
+    stats_text += "**👥 ТОП-5 активных клиентов:**\n"
+    for i, (client, count) in enumerate(sorted_clients[:5], 1):
+        stats_text += f"{i}. {client}: {count} заказ(ов)\n"
+    stats_text += "\n"
+    
+    # Статистика за последние 7 дней
+    sorted_dates = sorted(orders_history.keys(), reverse=True)[:7]
+    stats_text += "**📅 Последние 7 дней:**\n"
+    for date_str in sorted_dates:
+        date_orders = orders_history[date_str]
+        date_formatted = datetime.strptime(date_str, '%Y-%m-%d').strftime('%d.%m')
+        total_items = sum(order['total_items'] for order in date_orders)
+        stats_text += f"• {date_formatted}: {len(date_orders)} клиент(ов), {total_items} шт.\n"
+    
+    bot.answer_callback_query(call.id)
+    
+    # Если текст слишком длинный, разбиваем на части
+    if len(stats_text) > 4000:
+        parts = [stats_text[i:i+4000] for i in range(0, len(stats_text), 4000)]
+        for part in parts:
+            bot.send_message(call.message.chat.id, part)
+    else:
+        bot.send_message(call.message.chat.id, stats_text)
+
+def show_history_by_dates(call):
+    """Показать список дат для детального просмотра"""
+    if not orders_history:
+        bot.answer_callback_query(call.id, "Нет данных")
+        return
+    
+    sorted_dates = sorted(orders_history.keys(), reverse=True)[:14]  # Последние 14 дней
+    
+    markup = InlineKeyboardMarkup(row_width=2)
+    for date_str in sorted_dates:
+        date_formatted = datetime.strptime(date_str, '%Y-%m-%d').strftime('%d.%m.%Y')
+        orders_count = len(orders_history[date_str])
+        button_text = f"{date_formatted} ({orders_count})"
+        markup.add(InlineKeyboardButton(button_text, callback_data=f'history_date_{date_str}'))
+    
+    markup.add(InlineKeyboardButton('Назад', callback_data='admin_history'))
+    
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, "Выберите дату для детального просмотра:", reply_markup=markup)
+
+def show_history_for_date(call, date_str):
+    """Показать детальную информацию за конкретную дату"""
+    if date_str not in orders_history:
+        bot.answer_callback_query(call.id, "Дата не найдена")
+        return
+    
+    date_orders = orders_history[date_str]
+    date_formatted = datetime.strptime(date_str, '%Y-%m-%d').strftime('%d.%m.%Y')
+    
+    detail_text = f"**📅 Заказы за {date_formatted}**\n"
+    detail_text += f"Клиентов: {len(date_orders)}\n\n"
+    
+    # Сортируем по времени
+    sorted_orders = sorted(date_orders, key=lambda x: x.get('timestamp', '00:00'))
+    
+    for i, order in enumerate(sorted_orders, 1):
+        time_str = order.get('timestamp', '??:??')
+        detail_text += f"**{i}. {order['location_name']}** ({time_str})\n"
+        detail_text += f"   {order['address']}\n"
+        
+        # Детали заказа
+        order_items = []
+        for pos, qty in order['orders'].items():
+            if qty > 0:
+                order_items.append(f"{pos}:{qty}")
+        
+        detail_text += f"   {', '.join(order_items)}\n"
+        detail_text += f"   **Итого: {order['total_items']} шт.**\n\n"
+    
+    # Общая статистика за день
+    total_items = sum(order['total_items'] for order in date_orders)
+    position_totals = {}
+    for order in date_orders:
+        for pos, qty in order['orders'].items():
+            if pos not in position_totals:
+                position_totals[pos] = 0
+            position_totals[pos] += qty
+    
+    detail_text += "**📊 Итого за день:**\n"
+    detail_text += f"Всего товаров: {total_items} шт.\n\n"
+    detail_text += "**По позициям:**\n"
+    
+    for pos, qty in sorted(position_totals.items(), key=lambda x: x[1], reverse=True):
+        if qty > 0:
+            detail_text += f"• {pos}: {qty} шт.\n"
+    
+    bot.answer_callback_query(call.id)
+    
+    # Если текст слишком длинный, разбиваем
+    if len(detail_text) > 4000:
+        parts = [detail_text[i:i+4000] for i in range(0, len(detail_text), 4000)]
+        for part in parts:
+            bot.send_message(call.message.chat.id, part)
+    else:
+        bot.send_message(call.message.chat.id, detail_text)
+    
+    # Кнопка назад
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton('Назад к датам', callback_data='admin_history_dates'))
+    bot.send_message(call.message.chat.id, "Выберите действие:", reply_markup=markup)
 
 def clear_all_orders(call):
     """Очистить все заказы"""
@@ -740,8 +901,8 @@ def export_all_data(call):
 # === ПЛАНИРОВЩИК ЗАДАЧ ===
 
 # Настройки расписания (МСК)
-SCHEDULE_SEND_SUMMARY_TIME = "11:03"  # Время отправки сводки
-SCHEDULE_CLEAR_ORDERS_TIME = "11:04"  # Время очистки заказов
+SCHEDULE_SEND_SUMMARY_TIME = "09:00"  # Время отправки сводки
+SCHEDULE_CLEAR_ORDERS_TIME = "09:01"  # Время очистки заказов
 
 def check_scheduled_tasks():
     """Проверка и выполнение запланированных задач"""
