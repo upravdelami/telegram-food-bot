@@ -740,8 +740,8 @@ def export_all_data(call):
 # === ПЛАНИРОВЩИК ЗАДАЧ ===
 
 # Настройки расписания (МСК)
-SCHEDULE_SEND_SUMMARY_TIME = "09:00"  # Время отправки сводки
-SCHEDULE_CLEAR_ORDERS_TIME = "09:01"  # Время очистки заказов
+SCHEDULE_SEND_SUMMARY_TIME = "11:03"  # Время отправки сводки
+SCHEDULE_CLEAR_ORDERS_TIME = "11:04"  # Время очистки заказов
 
 def check_scheduled_tasks():
     """Проверка и выполнение запланированных задач"""
