@@ -201,6 +201,7 @@ def admin_panel(message: Message):
         InlineKeyboardButton('Удалить клиентов', callback_data='admin_delete_clients'),
         InlineKeyboardButton('История заказов', callback_data='admin_history'),
         InlineKeyboardButton('Обнулить заказы', callback_data='admin_clear'),
+        InlineKeyboardButton('⏰ Отправить напоминания', callback_data='admin_send_reminders'),
         InlineKeyboardButton('Экспорт данных', callback_data='admin_export'),
     ]
     markup.add(*buttons)
@@ -306,6 +307,8 @@ def handle_callback(call):
         show_history_for_date(call, date_str)
     elif call.data == 'admin_clear':
         clear_all_orders(call)
+    elif call.data == 'admin_send_reminders':
+        send_reminders_manually(call)
     elif call.data == 'admin_export':
         export_all_data(call)
     elif call.data in positions:
@@ -898,11 +901,67 @@ def export_all_data(call):
         bot.answer_callback_query(call.id, "Ошибка экспорта")
         bot.send_message(call.message.chat.id, f"Ошибка при экспорте данных: {e}")
 
+def send_reminders_manually(call):
+    """Ручная отправка напоминаний через админ-панель"""
+    if str(call.message.chat.id) != ADMIN_CHAT_ID:
+        bot.answer_callback_query(call.id, "Доступ запрещен")
+        return
+    
+    bot.answer_callback_query(call.id, "Отправляю напоминания...")
+    
+    try:
+        reminded_count = send_reminder_to_clients()
+        bot.send_message(
+            call.message.chat.id,
+            f"✅ Напоминания отправлены!\n"
+            f"Клиентов без заказов: {reminded_count}"
+        )
+    except Exception as e:
+        bot.send_message(call.message.chat.id, f"❌ Ошибка отправки напоминаний: {e}")
+
 # === ПЛАНИРОВЩИК ЗАДАЧ ===
 
 # Настройки расписания (МСК)
-SCHEDULE_SEND_SUMMARY_TIME = "09:00"  # Время отправки сводки
-SCHEDULE_CLEAR_ORDERS_TIME = "09:01"  # Время очистки заказов
+SCHEDULE_SEND_SUMMARY_TIME = "11:10"  # Время отправки сводки
+SCHEDULE_CLEAR_ORDERS_TIME = "11:13"  # Время очистки заказов
+SCHEDULE_REMINDER_TIME = "11:04"      # Напоминание за 1 час до очистки
+
+def send_reminder_to_clients():
+    """Отправка напоминаний клиентам без заказов"""
+    reminded_count = 0
+    
+    for user_id_str, user_data in users_data.items():
+        # Проверяем: зарегистрирован и нет заказов
+        if user_data.get('registered') and not user_data.get('orders'):
+            try:
+                # Создаём меню с кнопками
+                markup = InlineKeyboardMarkup(row_width=2)
+                buttons = [
+                    InlineKeyboardButton('🛒 Сделать заказ', callback_data='add_order'),
+                    InlineKeyboardButton('📋 Мой заказ', callback_data='my_order'),
+                ]
+                markup.add(*buttons)
+                
+                reminder_text = (
+                    f"⏰ **Напоминание!**\n\n"
+                    f"Через 1 час заказ на следующий день будет закрыт.\n\n"
+                    f"У вас в корзине пусто. Не хотите сделать заказ?\n\n"
+                    f"📍 {user_data['location_name']}\n"
+                    f"📮 {user_data['address']}"
+                )
+                
+                bot.send_message(
+                    chat_id=int(user_id_str),
+                    text=reminder_text,
+                    reply_markup=markup
+                )
+                reminded_count += 1
+                time.sleep(0.1)  # Небольшая задержка между отправками
+                
+            except Exception as e:
+                print(f"Ошибка отправки напоминания клиенту {user_id_str}: {e}")
+    
+    return reminded_count
 
 def check_scheduled_tasks():
     """Проверка и выполнение запланированных задач"""
@@ -919,6 +978,34 @@ def check_scheduled_tasks():
         state["last_send_date"] = None
     if "last_clear_date" not in state:
         state["last_clear_date"] = None
+    if "last_reminder_date" not in state:
+        state["last_reminder_date"] = None
+    
+    # === НАПОМИНАНИЕ КЛИЕНТАМ (за 1 час до очистки) ===
+    if current_time == SCHEDULE_REMINDER_TIME:
+        if state["last_reminder_date"] != current_date:
+            print("*** ТРИГГЕР: ОТПРАВКА НАПОМИНАНИЙ ***")
+            try:
+                reminded_count = send_reminder_to_clients()
+                state["last_reminder_date"] = current_date
+                save_scheduler_state(state)
+                
+                # Уведомляем админа
+                bot.send_message(
+                    ADMIN_CHAT_ID, 
+                    f"⏰ Напоминания отправлены!\n"
+                    f"Клиентов без заказов: {reminded_count}\n"
+                    f"Время: {current_time}"
+                )
+                print(f"✅ Напоминания отправлены: {reminded_count} клиентов")
+            except Exception as e:
+                print(f"❌ Ошибка отправки напоминаний: {e}")
+                try:
+                    bot.send_message(ADMIN_CHAT_ID, f"❌ Ошибка отправки напоминаний: {e}")
+                except:
+                    pass
+        else:
+            print(f"⏸ Напоминания уже отправлены сегодня ({current_date})")
     
     # === ОТПРАВКА СВОДКИ ===
     if current_time == SCHEDULE_SEND_SUMMARY_TIME:
@@ -964,7 +1051,11 @@ def check_scheduled_tasks():
     state["check_count"] = check_count
     
     if check_count % 10 == 0:
-        print(f"💤 Ожидаем: сводка в {SCHEDULE_SEND_SUMMARY_TIME}, очистка в {SCHEDULE_CLEAR_ORDERS_TIME} МСК")
+        print(f"💤 Ожидаем:")
+        print(f"   • Напоминание в {SCHEDULE_REMINDER_TIME} МСК")
+        print(f"   • Сводка в {SCHEDULE_SEND_SUMMARY_TIME} МСК")
+        print(f"   • Очистка в {SCHEDULE_CLEAR_ORDERS_TIME} МСК")
+        print(f"   Последнее напоминание: {state.get('last_reminder_date', 'никогда')}")
         print(f"   Последняя сводка: {state.get('last_send_date', 'никогда')}")
         print(f"   Последняя очистка: {state.get('last_clear_date', 'никогда')}")
         save_scheduler_state(state)
